@@ -1,0 +1,13 @@
+.env
+target/
+node_modules/
+dist/
+__pycache__/
+*.pyc
+.venv/
+.idea/
+.vscode/
+
+# local secret files (never commit)
+env.local.txt
+.env.*

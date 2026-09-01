@@ -1,0 +1,109 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+   Design tokens. Light is the base; dark redefines only what changes.
+   Chart colours are the validated categorical palette (blue / orange / aqua /
+   yellow), stepped separately for the dark surface — not an automatic flip.
+--------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+  --surface-0: #f4f3f0;   /* page */
+  --surface-1: #ffffff;   /* cards */
+  --surface-2: #faf9f7;   /* raised rows, wells */
+  --border:    #e7e5e0;
+  --border-strong: #d6d3cc;
+
+  --text-primary:   #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted:     #86847e;
+
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --neutral-mark: #c9c7c1;
+
+  --status-good:     #0f7a4d;
+  --status-good-bg:  #e3f5ec;
+  --status-warning:  #a15c00;
+  --status-warning-bg: #fdf0d9;
+  --status-critical: #c0322f;
+  --status-critical-bg: #fdeceb;
+  --status-info:     #1f5fa8;
+  --status-info-bg:  #e6f0fb;
+  --status-idle-bg:  #eeece8;
+}
+
+.dark {
+  color-scheme: dark;
+  --surface-0: #131312;
+  --surface-1: #1c1c1a;
+  --surface-2: #232320;
+  --border:    #33322e;
+  --border-strong: #45443f;
+
+  --text-primary:   #f7f6f3;
+  --text-secondary: #c3c2b7;
+  --text-muted:     #8d8b82;
+
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --neutral-mark: #55534d;
+
+  --status-good:     #5ad19a;
+  --status-good-bg:  #12301f;
+  --status-warning:  #e5b464;
+  --status-warning-bg: #33260f;
+  --status-critical: #f08a86;
+  --status-critical-bg: #3a1a19;
+  --status-info:     #7fb2f0;
+  --status-info-bg:  #14263a;
+  --status-idle-bg:  #2a2a26;
+}
+
+body {
+  @apply bg-sunken text-ink antialiased;
+  font-feature-settings: "cv02", "cv03", "cv04", "tnum" 0;
+}
+
+@layer components {
+  .card {
+    @apply bg-surface border border-line rounded-xl shadow-card;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg text-sm font-medium
+           px-3.5 py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary { @apply btn bg-ink text-surface hover:opacity-90; }
+  .btn-approve { @apply btn text-white; background: var(--status-good); }
+  .btn-ghost   { @apply btn border border-line hover:bg-raised; }
+  .field {
+    @apply border border-line bg-surface text-ink rounded-lg px-2.5 py-1.5 text-sm
+           outline-none focus:ring-2 focus:ring-series1 focus:border-series1;
+  }
+  .skeleton {
+    @apply relative overflow-hidden bg-raised rounded-md;
+  }
+  .skeleton::after {
+    content: "";
+    @apply absolute inset-0 -translate-x-full animate-shimmer;
+    background-image: linear-gradient(90deg, transparent, rgba(128,128,128,.12), transparent);
+  }
+}
+
+/* Recharts: keep the surface behind tooltips/cursors on-theme */
+.recharts-default-tooltip {
+  background: var(--surface-1) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 8px 24px -6px rgba(0,0,0,.18);
+  font-size: 12px;
+}
+.recharts-tooltip-item { color: var(--text-secondary) !important; }

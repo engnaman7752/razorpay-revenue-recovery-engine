@@ -1,0 +1,59 @@
+# Full stack. Agent and frontend services are added in later phases;
+# Phase 1 needs only postgres + backend.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: recovery
+      POSTGRES_USER: recovery
+      POSTGRES_PASSWORD: recovery
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U recovery -d recovery"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: ./backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: jdbc:postgresql://postgres:5432/recovery
+      DATABASE_USER: recovery
+      DATABASE_PASSWORD: recovery
+      GATEWAY_MODE: ${GATEWAY_MODE:-simulated}
+      AGENT_BASE_URL: http://agent:8000
+      AGENT_SHARED_SECRET: ${AGENT_SHARED_SECRET:-dev-agent-secret}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
+    ports:
+      - "8080:8080"
+
+  agent:
+    build: ./agent
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      BACKEND_BASE_URL: http://backend:8080
+      AGENT_SHARED_SECRET: ${AGENT_SHARED_SECRET:-dev-agent-secret}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      DATABASE_URL: postgresql://recovery:recovery@postgres:5432/recovery
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+volumes:
+  pgdata:

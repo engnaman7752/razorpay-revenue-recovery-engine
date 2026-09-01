@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: recovery
+          POSTGRES_USER: recovery
+          POSTGRES_PASSWORD: recovery
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U recovery -d recovery"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run phase verification
+        run: bash ci/verify.sh
+        env:
+          DATABASE_URL: jdbc:postgresql://localhost:5432/recovery
+          DATABASE_USER: recovery
+          DATABASE_PASSWORD: recovery

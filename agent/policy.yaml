@@ -1,0 +1,9 @@
+# Hard limits enforced by the guard node (pure code, not prompts).
+# Hot-reloadable: read at every /decide invocation.
+max_payment_attempts: 3
+max_customer_contacts: 2
+max_decide_loops: 4
+quiet_hours: {start: "21:00", end: "08:00", tz: "Asia/Kolkata"}
+auto_escalate_above_inr: 25000
+min_ev_threshold_paise: 5000
+opt_out: immediate_stop

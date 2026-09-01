@@ -1,0 +1,39 @@
+spring:
+  # Load the repo-root .env (gitignored) as a property source so plain
+  # `java -jar`, `mvn spring-boot:run` and IDE run configs all pick up local
+  # secrets without exporting shell variables. Both paths are tried because
+  # the working directory may be the repo root or backend/.
+  # 'optional:' = ignored when absent (Docker/CI), and real OS environment
+  # variables still take precedence over anything in the file.
+  config:
+    import:
+      - "optional:file:./.env[.properties]"
+      - "optional:file:../.env[.properties]"
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/recovery}
+    username: ${DATABASE_USER:recovery}
+    password: ${DATABASE_PASSWORD:recovery}
+  jpa:
+    hibernate:
+      ddl-auto: validate   # schema is owned by Flyway, never by Hibernate
+    open-in-view: false
+  flyway:
+    enabled: true
+
+server:
+  port: 8080
+
+recovery:
+  frontend-origin: ${FRONTEND_ORIGIN:http://localhost:5173}
+  cases-file: ${CASES_FILE:data/cases.jsonl}
+  results-file: ${RESULTS_FILE:eval/results.md}
+  batch:
+    enabled: false   # turn on with --recovery.batch.enabled=true
+    include-agent: ${BATCH_INCLUDE_AGENT:false}   # needs the agent service running
+  agent-base-url: ${AGENT_BASE_URL:http://localhost:8000}
+  agent-shared-secret: ${AGENT_SHARED_SECRET:dev-agent-secret}
+  gateway-mode: ${GATEWAY_MODE:simulated}   # live | simulated
+  razorpay:
+    key-id: ${RAZORPAY_KEY_ID:}
+    key-secret: ${RAZORPAY_KEY_SECRET:}
+    webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:}

@@ -1,0 +1,51 @@
+# Render blueprint: backend + agent as Docker web services, database on Neon.
+# In the Render dashboard: New -> Blueprint -> pick this repo. Fill the
+# sync:false env vars when prompted (values from docs/deploy.md).
+services:
+  - type: web
+    name: recovery-backend
+    runtime: docker
+    rootDir: backend
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL          # jdbc:postgresql://<neon-host>/<db>?sslmode=require
+        sync: false
+      - key: DATABASE_USER
+        sync: false
+      - key: DATABASE_PASSWORD
+        sync: false
+      - key: AGENT_BASE_URL        # https://recovery-agent.onrender.com
+        sync: false
+      - key: AGENT_SHARED_SECRET
+        sync: false
+      - key: GATEWAY_MODE
+        value: live
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      - key: FRONTEND_ORIGIN       # https://<your-app>.vercel.app
+        sync: false
+      - key: JAVA_TOOL_OPTIONS
+        value: -Xmx300m
+
+  - type: web
+    name: recovery-agent
+    runtime: docker
+    rootDir: agent
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: BACKEND_BASE_URL      # https://recovery-backend.onrender.com
+        sync: false
+      - key: AGENT_SHARED_SECRET   # same value as the backend's
+        sync: false
+      - key: DATABASE_URL          # postgresql://user:pass@<neon-host>/<db>?sslmode=require
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
