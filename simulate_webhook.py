@@ -4,8 +4,16 @@ import json
 import requests
 import time
 
-# Secret from your .env
-secret = "whsec_8b64c1a9d91064227a92bb4d01f05373"
+import os
+from pathlib import Path
+
+# Load secret from .env securely
+env_file = Path(__file__).parent / ".env"
+with open(env_file, "r") as f:
+    for line in f:
+        if line.startswith("RAZORPAY_WEBHOOK_SECRET="):
+            secret = line.strip().split("=", 1)[1]
+            break
 
 payload = {
     "event": "payment.failed",
