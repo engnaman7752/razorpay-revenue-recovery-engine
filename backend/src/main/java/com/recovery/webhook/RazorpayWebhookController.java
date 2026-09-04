@@ -24,9 +24,9 @@ import java.util.concurrent.Executors;
  * Receives Razorpay webhooks. Signature is verified against the RAW body
  * bytes before any parsing; mismatch -> 401 and nothing else happens.
  *
- * payment.failed        -> open a LIVE recovery case, hand it to the agent
- * payment_link.paid     -> mark the linked case RECOVERED
- * order.paid            -> mark the case whose retry order was paid RECOVERED
+ * payment.failed -> open a LIVE recovery case, hand it to the agent
+ * payment_link.paid -> mark the linked case RECOVERED
+ * order.paid -> mark the case whose retry order was paid RECOVERED
  */
 @RestController
 public class RazorpayWebhookController {
@@ -43,7 +43,7 @@ public class RazorpayWebhookController {
     private String webhookSecret;
 
     public RazorpayWebhookController(RecoveryCaseRepository caseRepository,
-                                     AgentClient agentClient, DecisionLogger decisionLogger) {
+            AgentClient agentClient, DecisionLogger decisionLogger) {
         this.caseRepository = caseRepository;
         this.agentClient = agentClient;
         this.decisionLogger = decisionLogger;
@@ -131,7 +131,14 @@ public class RazorpayWebhookController {
         if (caseId == null) {
             return ResponseEntity.ok(Map.of("ignored", "no case reference"));
         }
-        return caseRepository.findById(UUID.fromString(caseId)).map(c -> {
+        UUID uuid;
+        try {
+            uuid = UUID.fromString(caseId);
+        } catch (IllegalArgumentException e) {
+            log.warn("ignored recovery for non-agent item (invalid uuid: {})", caseId);
+            return ResponseEntity.ok(Map.of("ignored", "invalid uuid " + caseId));
+        }
+        return caseRepository.findById(uuid).map(c -> {
             if (c.getStatus() != CaseStatus.RECOVERED) {
                 c.setStatus(CaseStatus.RECOVERED);
                 c.setRecoveredPaise(c.getAmountPaise());
