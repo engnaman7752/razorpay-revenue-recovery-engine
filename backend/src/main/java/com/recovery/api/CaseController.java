@@ -19,8 +19,10 @@ import java.util.UUID;
 
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
-/** Read API for the dashboard, plus a manual trigger to run a case through
- * the agent (also used by Phase 5/6 verification). */
+/**
+ * Read API for the dashboard, plus a manual trigger to run a case through
+ * the agent (also used by Phase 5/6 verification).
+ */
 @RestController
 public class CaseController {
 
@@ -29,8 +31,8 @@ public class CaseController {
     private final AgentClient agentClient;
 
     public CaseController(RecoveryCaseRepository caseRepository,
-                          DecisionLogRepository decisionLogRepository,
-                          AgentClient agentClient) {
+            DecisionLogRepository decisionLogRepository,
+            AgentClient agentClient) {
         this.caseRepository = caseRepository;
         this.decisionLogRepository = decisionLogRepository;
         this.agentClient = agentClient;
@@ -38,7 +40,7 @@ public class CaseController {
 
     @GetMapping("/api/cases")
     public List<Map<String, Object>> list() {
-        return caseRepository.findAll(Sort.by(Sort.Direction.DESC, "amountPaise")).stream()
+        return caseRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt")).stream()
                 .map(this::caseSummary)
                 .toList();
     }

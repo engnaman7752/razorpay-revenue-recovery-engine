@@ -23,6 +23,30 @@ from graph.llm import DecideLLM
 POLICY_PATH = Path(__file__).parent / "policy.yaml"
 
 
+def _load_dotenv() -> None:
+    """Read the repo-root .env into the environment.
+
+    Mirrors what application.yml does for the backend, so `uvicorn main:app`
+    works from any terminal without first exporting shell variables. Real
+    environment variables always win (setdefault), so Docker and CI are
+    unaffected.
+    """
+    here = Path(__file__).resolve().parent
+    for candidate in (here / ".env", here.parent / ".env"):
+        if not candidate.exists():
+            continue
+        for line in candidate.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip())
+        return
+
+
+_load_dotenv()
+
+
 def _resolve_database_url() -> str:
     """Where to keep LangGraph checkpoints.
 

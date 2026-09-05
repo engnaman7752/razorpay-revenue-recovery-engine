@@ -21,7 +21,9 @@ spring:
     enabled: true
 
 server:
-  port: 8080
+  # Overridable with SERVER_PORT in .env. The dashboard's vite proxy and
+  # scripts/setup_demo.py read the SAME key, so the three can never drift.
+  port: ${SERVER_PORT:8080}
 
 recovery:
   frontend-origin: ${FRONTEND_ORIGIN:http://localhost:5173}

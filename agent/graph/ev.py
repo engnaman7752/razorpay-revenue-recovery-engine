@@ -19,6 +19,27 @@ CAUSE_MAP = {
     "authentication_failed": "CUSTOMER_ACTION",
     "payment_cancelled": "CUSTOMER_ACTION",
     "card_number_invalid": "UNRECOVERABLE",
+
+    # --- Real Razorpay webhook error_reason values (live mode) -------------
+    # Razorpay's live payment.failed events use different, often generic
+    # strings than the synthetic dataset above. Map the ones test mode emits
+    # so a real failed payment diagnoses cleanly instead of falling through to
+    # UNRECOVERABLE. A generic "payment_failed" is treated as TRANSIENT — the
+    # safe, cheap first move is a retry, and if that fails the graph escalates
+    # to a link on its own.
+    "payment_failed": "TRANSIENT",
+    "gateway_error": "TRANSIENT",
+    "server_error": "TRANSIENT",
+    "payment_timed_out_error": "TRANSIENT",
+    "payment_pending": "TRANSIENT",
+    "insufficient_funds": "SOFT_DECLINE",
+    "payment_declined_by_bank": "SOFT_DECLINE",
+    "card_expired": "HARD_DECLINE",
+    "international_transaction_not_allowed": "HARD_DECLINE",
+    "card_not_supported": "HARD_DECLINE",
+    "payment_canceled_by_user": "CUSTOMER_ACTION",
+    "payment_cancelled_by_user": "CUSTOMER_ACTION",
+    "invalid_card": "UNRECOVERABLE",
 }
 
 ACTIONS = ["retry_now", "schedule_retry_24h", "payment_link", "reminder_with_link"]

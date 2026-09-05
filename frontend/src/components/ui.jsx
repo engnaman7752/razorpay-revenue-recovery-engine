@@ -98,7 +98,7 @@ export function ErrorState({ error, onRetry }) {
         Couldn’t load data
       </div>
       <p className="text-sm text-inkmid mt-1">
-        {String(error)} — is the backend running on :8080?
+        {String(error)} — is the backend running? Vite prints the port it proxies to when you start it.
       </p>
       {onRetry && <button className="btn-ghost mt-3" onClick={onRetry}>Retry</button>}
     </Card>

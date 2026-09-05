@@ -6,7 +6,6 @@ __pycache__/
 *.pyc
 .venv/
 .idea/
-.vscode/
 
 # local secret files (never commit)
 env.local.txt

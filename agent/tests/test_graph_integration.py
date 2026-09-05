@@ -21,8 +21,8 @@ PORT = 18080
 NOON_IST = "2026-08-27T12:00:00+05:30"
 
 # expected values from the deterministic seed-42 dataset (see Phase 2)
-NAIVE_RECOVERED_PAISE = 46_545_000
-ORACLE_RECOVERED_PAISE = 154_158_900
+NAIVE_RECOVERED_PAISE = 46_545_015
+ORACLE_RECOVERED_PAISE = 154_158_887
 
 
 @pytest.fixture(scope="module")

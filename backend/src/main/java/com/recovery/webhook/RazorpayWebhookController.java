@@ -24,9 +24,9 @@ import java.util.concurrent.Executors;
  * Receives Razorpay webhooks. Signature is verified against the RAW body
  * bytes before any parsing; mismatch -> 401 and nothing else happens.
  *
- * payment.failed -> open a LIVE recovery case, hand it to the agent
- * payment_link.paid -> mark the linked case RECOVERED
- * order.paid -> mark the case whose retry order was paid RECOVERED
+ * payment.failed        -> open a LIVE recovery case, hand it to the agent
+ * payment_link.paid     -> mark the linked case RECOVERED
+ * order.paid            -> mark the case whose retry order was paid RECOVERED
  */
 @RestController
 public class RazorpayWebhookController {
@@ -43,7 +43,7 @@ public class RazorpayWebhookController {
     private String webhookSecret;
 
     public RazorpayWebhookController(RecoveryCaseRepository caseRepository,
-            AgentClient agentClient, DecisionLogger decisionLogger) {
+                                     AgentClient agentClient, DecisionLogger decisionLogger) {
         this.caseRepository = caseRepository;
         this.agentClient = agentClient;
         this.decisionLogger = decisionLogger;
@@ -115,10 +115,9 @@ public class RazorpayWebhookController {
     }
 
     private ResponseEntity<Map<String, Object>> linkPaid(Map<String, Object> link) {
-        // LiveRazorpayGateway sets reference_id = "<case id>:<timestamp>"
+        // LiveRazorpayGateway packs the case id into reference_id
         String ref = (String) link.get("reference_id");
-        String caseId = ref == null ? null : ref.split(":")[0];
-        return recover(caseId, "payment link " + link.get("id") + " paid");
+        return recover(ref, "payment link " + link.get("id") + " paid");
     }
 
     private ResponseEntity<Map<String, Object>> orderPaid(Map<String, Object> order) {
@@ -127,27 +126,49 @@ public class RazorpayWebhookController {
                 "retry order " + order.get("id") + " paid");
     }
 
-    private ResponseEntity<Map<String, Object>> recover(String caseId, String how) {
-        if (caseId == null) {
-            return ResponseEntity.ok(Map.of("ignored", "no case reference"));
+    /** Recover the case UUID from a payment-link reference_id. Supports the
+     *  packed form "<32-hex><suffix>" and the legacy "<uuid>:<ts>" form. */
+    static String caseIdFromReference(String ref) {
+        if (ref == null) return null;
+        if (ref.contains(":")) return ref.split(":")[0];            // legacy
+        if (ref.length() >= 32) {
+            String h = ref.substring(0, 32);
+            if (h.matches("[0-9a-fA-F]{32}")) {
+                return h.replaceFirst("(.{8})(.{4})(.{4})(.{4})(.{12})",
+                                      "$1-$2-$3-$4-$5");
+            }
         }
-        UUID uuid;
+        return ref;
+    }
+
+    /** Parse a case UUID from a webhook value, tolerating anything that isn't
+     *  ours. Paying a payment LINK makes Razorpay also fire order.paid for the
+     *  link's internal order, whose receipt is Razorpay's own value, not our
+     *  case id — that must be ignored, never crash the webhook. */
+    static UUID parseCaseId(String raw) {
+        if (raw == null) return null;
         try {
-            uuid = UUID.fromString(caseId);
+            return UUID.fromString(caseIdFromReference(raw));
         } catch (IllegalArgumentException e) {
-            log.warn("ignored recovery for non-agent item (invalid uuid: {})", caseId);
-            return ResponseEntity.ok(Map.of("ignored", "invalid uuid " + caseId));
+            return null;
         }
-        return caseRepository.findById(uuid).map(c -> {
+    }
+
+    private ResponseEntity<Map<String, Object>> recover(String rawId, String how) {
+        UUID id = parseCaseId(rawId);
+        if (id == null) {
+            return ResponseEntity.ok(Map.of("ignored", "not a recovery case: " + rawId));
+        }
+        return caseRepository.findById(id).map(c -> {
             if (c.getStatus() != CaseStatus.RECOVERED) {
                 c.setStatus(CaseStatus.RECOVERED);
                 c.setRecoveredPaise(c.getAmountPaise());
                 caseRepository.save(c);
                 decisionLogger.log(c.getId(), "check_outcome", null, null,
                         "webhook: " + how, null, false, null, "RECOVERED", null);
-                log.info("case {} RECOVERED via webhook ({})", caseId, how);
+                log.info("case {} RECOVERED via webhook ({})", id, how);
             }
-            return ResponseEntity.ok(Map.<String, Object>of("case_id", caseId, "status", "RECOVERED"));
-        }).orElse(ResponseEntity.ok(Map.of("ignored", "unknown case " + caseId)));
+            return ResponseEntity.ok(Map.<String, Object>of("case_id", id.toString(), "status", "RECOVERED"));
+        }).orElse(ResponseEntity.ok(Map.of("ignored", "unknown case " + id)));
     }
 }

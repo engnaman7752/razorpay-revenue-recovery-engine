@@ -3,6 +3,9 @@ using a stubbed model — no API key or network involved."""
 
 import json
 
+import pytest
+
+from graph import llm
 from graph.llm import DecideLLM, _parse
 
 CANDIDATES = ["schedule_retry_24h", "payment_link", "retry_now"]
@@ -67,3 +70,74 @@ def test_no_api_key_means_rule_mode():
     assert not llm.available
     action, _, mode = llm.choose(CONTEXT, CANDIDATES)
     assert action == CANDIDATES[0] and mode == "rule"
+
+
+# --------------------------------------------- the REST transport (AQ. keys)
+def _fake_response(status, payload):
+    class R:
+        status_code = status
+        text = json.dumps(payload)
+        def json(self): return payload
+    return R()
+
+
+def test_rest_call_sends_the_header_not_the_query_param(monkeypatch):
+    """AQ.-prefixed keys must go in x-goog-api-key. Passing ?key= as well is
+    what produces 'Multiple authentication credentials received'."""
+    seen = {}
+
+    def fake_post(url, **kwargs):
+        seen["url"] = url
+        seen["headers"] = kwargs.get("headers", {})
+        seen["params"] = kwargs.get("params")
+        seen["json"] = kwargs.get("json")
+        return _fake_response(200, {"candidates": [{"content": {"parts": [
+            {"text": '{"action": "payment_link", "reason": "hard decline"}'}]}}]})
+
+    monkeypatch.setattr(llm.httpx, "post", fake_post)
+    monkeypatch.setenv("GOOGLE_API_KEY", "AQ.Ab8FAKEKEY")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-3.6-flash")
+
+    action, reason, mode = llm.DecideLLM().choose(
+        {"diagnosis": "HARD_DECLINE"}, ["payment_link", "retry_now"])
+
+    assert (action, mode) == ("payment_link", "llm")
+    assert seen["headers"]["x-goog-api-key"] == "AQ.Ab8FAKEKEY"
+    assert seen["params"] is None, "must not also send ?key= — that breaks AQ. keys"
+    assert "gemini-3.6-flash:generateContent" in seen["url"]
+    assert seen["json"]["generationConfig"]["temperature"] == 0
+
+
+def test_rest_error_keeps_the_reason_in_the_audit_trail(monkeypatch):
+    """A bare exception name sent us debugging the wrong thing once. The
+    decision_log must carry what Google actually said."""
+    monkeypatch.setattr(llm.httpx, "post", lambda url, **kw: _fake_response(
+        404, {"error": {"message": "models/gemini-2.5-flash is no longer "
+                                   "available to new users."}}))
+    monkeypatch.setenv("GOOGLE_API_KEY", "AQ.Ab8FAKEKEY")
+
+    action, reason, mode = llm.DecideLLM().choose(
+        {"diagnosis": "HARD_DECLINE"}, ["payment_link", "retry_now"])
+
+    assert mode == "fallback_error"
+    assert action == "payment_link", "must still fall back to the top-EV action"
+    assert "404" in reason and "no longer available" in reason
+
+
+def test_llm_can_be_switched_off_for_the_ablation(monkeypatch):
+    """Same key, same everything — LLM_ENABLED=false must give the
+    deterministic top-EV chooser, so an A/B batch run is attributable."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "AQ.Ab8FAKEKEY")
+    monkeypatch.setenv("LLM_ENABLED", "false")
+    monkeypatch.setattr(llm.httpx, "post", lambda *a, **k:
+                        pytest.fail("must not call Gemini when LLM_ENABLED=false"))
+
+    action, reason, mode = llm.DecideLLM().choose(CONTEXT, CANDIDATES)
+    assert mode == "rule"
+    assert action == CANDIDATES[0]
+
+
+def test_llm_on_by_default_when_a_key_exists(monkeypatch):
+    monkeypatch.setenv("GOOGLE_API_KEY", "AQ.Ab8FAKEKEY")
+    monkeypatch.delenv("LLM_ENABLED", raising=False)
+    assert llm.DecideLLM().available is True
