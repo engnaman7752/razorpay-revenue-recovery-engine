@@ -63,8 +63,10 @@ public class LiveRazorpayGateway implements RazorpayGateway {
                             .body(Map.of(
                                     "amount", c.getAmountPaise(),
                                     "currency", c.getCurrency(),
-                                    // reference_id must be unique per link; webhook takes the part before ':'
-                                    "reference_id", c.getId() + ":" + System.currentTimeMillis(),
+                                    // reference_id must be unique per link and <=40 chars
+                                    // (Razorpay's limit). A UUID+":"+millis is 50, so we
+                                    // pack the 32-hex case id + a base36 time suffix.
+                                    "reference_id", shortReference(c.getId()),
                                     "description", "Complete your failed payment",
                                     "notes", Map.of("recovery_case", c.getId().toString())))
                             .retrieve().body(Map.class);
@@ -80,5 +82,18 @@ public class LiveRazorpayGateway implements RazorpayGateway {
             log.error("Razorpay API call failed for case {} action {}", c.getId(), action, e);
             return GatewayResult.failed("razorpay API error: " + e.getMessage());
         }
+    }
+
+    /** Razorpay caps reference_id at 40 chars. Pack the 32-char (dash-stripped)
+     *  case id plus a base36 millis suffix; the webhook rebuilds the UUID from
+     *  the first 32 hex chars. Kept <=40 by trimming the suffix's high (stable)
+     *  digits, never its low (volatile) ones, so links stay unique. */
+    static String shortReference(java.util.UUID id) {
+        String hex = id.toString().replace("-", "");                  // 32
+        String t = Long.toString(System.currentTimeMillis(), 36);    // ~8
+        if (hex.length() + t.length() > 40) {
+            t = t.substring(t.length() - (40 - hex.length()));
+        }
+        return hex + t;
     }
 }
