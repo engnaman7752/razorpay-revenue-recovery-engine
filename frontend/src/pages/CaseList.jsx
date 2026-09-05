@@ -25,7 +25,7 @@ export default function CaseList() {
   const [status, setStatus] = useState("ALL");
   const [cause, setCause] = useState("ALL");
   const [query, setQuery] = useState("");
-  const [sort, setSort] = useState({ key: "amount_paise", dir: "desc" });
+  const [sort, setSort] = useState({ key: "created_at", dir: "desc" });
 
   const load = () => {
     setError(null);
@@ -40,9 +40,9 @@ export default function CaseList() {
       (status === "ALL" || c.status === status) &&
       (cause === "ALL" || c.diagnosis === cause) &&
       (!q || c.case_id.toLowerCase().includes(q)
-          || (c.razorpay_order_id || "").toLowerCase().includes(q)
-          || (c.error_reason || "").toLowerCase().includes(q)
-          || (c.customer_id || "").toLowerCase().includes(q)));
+        || (c.razorpay_order_id || "").toLowerCase().includes(q)
+        || (c.error_reason || "").toLowerCase().includes(q)
+        || (c.customer_id || "").toLowerCase().includes(q)));
     const { key, dir } = sort;
     return [...rows].sort((a, b) => {
       const va = a[key] ?? "", vb = b[key] ?? "";
@@ -76,8 +76,8 @@ export default function CaseList() {
         <div className="flex gap-1 p-0.5 bg-raised rounded-lg border border-line overflow-x-auto">
           {CAUSES.map((c) => (
             <button key={c} onClick={() => setCause(c)}
-                    className={"px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap transition-colors " +
-                      (cause === c ? "bg-surface text-ink shadow-card" : "text-inkmid hover:text-ink")}>
+              className={"px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap transition-colors " +
+                (cause === c ? "bg-surface text-ink shadow-card" : "text-inkmid hover:text-ink")}>
               {c === "ALL" ? "All causes" : CAUSE_LABEL[c]}
             </button>
           ))}
@@ -88,7 +88,7 @@ export default function CaseList() {
           ))}
         </select>
         <input className="field w-56" placeholder="Search id, order, error, customer…"
-               value={query} onChange={(e) => setQuery(e.target.value)} />
+          value={query} onChange={(e) => setQuery(e.target.value)} />
         <div className="text-xs text-inkmid ml-auto tabular-nums">
           <span className="font-medium text-ink">{filtered.length}</span> of {cases.length} cases ·
           {" "}{inr(totals.recovered)} recovered of {inr(totals.at_risk)}
@@ -102,10 +102,10 @@ export default function CaseList() {
               <tr className="text-left text-[11px] uppercase tracking-wider text-inkmid border-b border-line bg-raised">
                 {COLUMNS.map((col) => (
                   <th key={col.key}
-                      className={"px-4 py-2.5 font-semibold " +
-                        (col.align === "right" ? "text-right " : "") +
-                        (col.sortable ? "cursor-pointer select-none hover:text-ink" : "")}
-                      onClick={col.sortable ? () => toggleSort(col.key) : undefined}>
+                    className={"px-4 py-2.5 font-semibold " +
+                      (col.align === "right" ? "text-right " : "") +
+                      (col.sortable ? "cursor-pointer select-none hover:text-ink" : "")}
+                    onClick={col.sortable ? () => toggleSort(col.key) : undefined}>
                     {col.label}
                     {sort.key === col.key && (
                       <span className="ml-1 text-inkmute">{sort.dir === "desc" ? "↓" : "↑"}</span>
@@ -117,8 +117,8 @@ export default function CaseList() {
             <tbody>
               {filtered.map((c) => (
                 <tr key={c.case_id}
-                    onClick={() => { window.location.hash = `#/cases/${c.case_id}`; }}
-                    className="border-b border-line last:border-0 hover:bg-raised cursor-pointer transition-colors">
+                  onClick={() => { window.location.hash = `#/cases/${c.case_id}`; }}
+                  className="border-b border-line last:border-0 hover:bg-raised cursor-pointer transition-colors">
                   <td className="px-4 py-2.5">
                     <span className="font-mono text-[13px] text-series1">{shortId(c.case_id)}</span>
                     {c.source === "LIVE" && (
@@ -134,7 +134,7 @@ export default function CaseList() {
                   <td className="px-4 py-2.5 text-right tabular-nums text-inkmid">{c.attempts}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums text-inkmid">{c.contacts_made}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums font-medium"
-                      style={c.recovered_paise > 0 ? { color: "var(--status-good)" } : undefined}>
+                    style={c.recovered_paise > 0 ? { color: "var(--status-good)" } : undefined}>
                     {c.recovered_paise > 0 ? inr(c.recovered_paise) : "–"}
                   </td>
                 </tr>
