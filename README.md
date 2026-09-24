@@ -45,7 +45,13 @@ Three services, and the split between them is the core design decision: **the th
 
 ### High-Level Design (HLD)
 
-**The one-breath version, for saying out loud:** *Razorpay tells us the moment a payment fails → the backend proves it's really Razorpay and opens a case → the agent reasons about what kind of failure it is and picks the best next action → if it's small, the backend just does it; if it's large, the agent pauses and waits for a human, durably → Razorpay's next webhook tells us if it worked → the dashboard updates live, either way.*
+The architecture is deliberately split into three layers: **The thing that reasons (Python)** and **The thing that acts (Java).**
+
+**The 4-Step Workflow (How to explain it):**
+1. **Catch & Store (Spring Boot Backend):** Razorpay sends a `payment.failed` webhook. The Java backend securely verifies the HMAC signature, safely stores the case in PostgreSQL, and asks the Python Agent for advice.
+2. **Brain & Logic (Python + LangGraph):** The Agent operates as a state machine. It maps the error to a root cause, mathematically calculates which recovery action has the highest Expected Value (EV), and uses Google Gemini to rank the best options.
+3. **Governance (Policy-as-Code):** Before any action is taken, a strict rules engine checks `policy.yaml`. If it's during quiet hours (late at night) or violates retry limits, it is blocked. If the failure involves over ₹25,000, the AI entirely pauses and waits for Human Approval. 
+4. **Execution (Internal Tools):** If approved, the agent tells the Java backend which tool to run. The Java backend safely calls Razorpay to generate a fresh Payment Link or Retry Order. The React frontend renders this entire timeline instantly.
 
 ```mermaid
 flowchart LR
@@ -83,9 +89,7 @@ flowchart LR
     LEARN -.posteriors.-> DB
 ```
 
-Three services, split on purpose: **the thing that reasons and the thing that acts are different processes.** Backend owns reality — Razorpay, the database, the six tools. Agent only reasons and can touch the world through those six tools, nothing else. Frontend just renders what's already in the database.
-
-### The decision graph, at a glance
+### The AI Decision Graph (LLD)
 
 ```mermaid
 flowchart TD
@@ -103,7 +107,11 @@ flowchart TD
     F --> Z([END])
 ```
 
-Diagnose classifies the failure (deterministic, not the LLM). Decide ranks actions by expected value (learned success rate × amount). Guard is policy-as-code — the AI ranks, guard has final say. Execute is the only node allowed to touch Razorpay. Human_review is a durable pause, not a crash — it survives a restart.
+**How to explain the 4 LangGraph Nodes:**
+*   **Diagnose:** Maps Razorpay's exact error code (e.g. `card_declined`) to a deterministic category (e.g. `HARD_DECLINE`). This prevents LLM hallucinations.
+*   **Decide:** Ranks every possible action by Expected Value (Predicted Success Rate × Amount).
+*   **Guard:** The Policy-as-Code gatekeeper. Even if the AI ranks an action highly, Guard has the final veto.
+*   **Execute:** The only node permitted to trigger real-world consequences via the Backend's authenticated tools.
 
 ---
 
