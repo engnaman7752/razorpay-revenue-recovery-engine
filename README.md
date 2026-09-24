@@ -123,7 +123,7 @@ sequenceDiagram
     AG->>AG: diagnose -> decide -> guard
     alt amount over Rs.25,000
         AG->>DB: checkpoint saved, thread_id = case_id
-        Note over AG,DB: pauses here; POST /resume later continues from this checkpoint
+        Note over AG,DB: pauses here - POST /resume later continues from this checkpoint
     else within limits
         AG->>BE: POST /internal/tools/{action}
         BE->>RZP: execute for real (retry / payment link / reminder)
