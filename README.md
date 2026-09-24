@@ -43,6 +43,8 @@ Recovery is really a **portfolio decision**: which rupees to chase, with which a
 
 Three services, and the split between them is the core design decision: **the thing that reasons and the thing that acts are separate processes.**
 
+### High-Level Design (HLD)
+
 ```mermaid
 flowchart LR
     subgraph FE["Frontend · React + Vite"]
@@ -115,6 +117,124 @@ flowchart TD
 Every node writes the exact inputs it saw, the action, the reasoning, the EV, and every block-with-reason to `decision_log`. **The agent physically cannot act without logging.**
 
 ---
+
+
+## Low-Level Design (LLD)
+
+This is what's actually running under each box above — the exact call sequence, the database schema, and the internal contracts. Reach for this when someone asks "show me the code path," not just the picture.
+
+### Sequence — a failed payment, end to end
+
+```mermaid
+sequenceDiagram
+    participant RZP as Razorpay
+    participant WH as Backend: RazorpayWebhookController
+    participant DB as PostgreSQL
+    participant AG as Agent: LangGraph /decide
+    participant TOOL as Backend: ToolController (/internal/tools)
+    participant GW as Backend: Gateway (Live/Simulated)
+
+    RZP->>WH: POST /webhook/razorpay (payment.failed)<br/>raw bytes + X-Razorpay-Signature
+    WH->>WH: SignatureVerifier.verify(rawBody, sig, secret)
+    alt signature invalid
+        WH-->>RZP: 401, nothing else happens
+    end
+    WH->>DB: INSERT recovery_case (status=DETECTED, source=LIVE)
+    WH->>AG: POST /decide {case_id, amount_paise, error_reason, ...}
+    AG->>AG: diagnose -> decide -> guard -> execute (LangGraph, in-process)
+    AG->>TOOL: POST /internal/tools/{action} (X-Agent-Secret header)
+    TOOL->>GW: gateway.retry() / .createPaymentLink() / ...
+    GW->>RZP: real Razorpay API call (test mode)
+    RZP-->>GW: order_id / rzp.io link
+    GW-->>TOOL: GatewayResult
+    TOOL->>DB: UPDATE recovery_case, INSERT decision_log
+    TOOL-->>AG: {outcome: PENDING, ...}
+    AG-->>WH: {status, trace[], paused}
+    WH->>DB: UPDATE recovery_case (status=IN_PROGRESS / WAITING_APPROVAL)
+    Note over RZP,DB: money has NOT moved yet -- PENDING means an action was only initiated
+    RZP->>WH: POST /webhook/razorpay (payment_link.paid / order.paid), later
+    WH->>WH: caseIdFromReference(ref) -- parses the case id back out, defensively
+    WH->>DB: UPDATE recovery_case SET status=RECOVERED, recovered_paise=amount
+```
+
+### Sequence — human approval: pause and resume across a restart
+
+```mermaid
+sequenceDiagram
+    participant AG as Agent (LangGraph)
+    participant DB as PostgreSQL (checkpoints)
+    participant BE as Backend
+    participant UI as Dashboard
+
+    AG->>AG: guard() sees amount > Rs.25,000, needs_approval
+    AG->>AG: escalate_notify -> human_review -> interrupt({...})
+    AG->>DB: checkpoint saved, keyed by thread_id = case_id
+    AG-->>BE: response contains "__interrupt__", paused=true
+    BE->>DB: recovery_case.status = WAITING_APPROVAL
+    UI->>BE: GET /api/escalations (poll)
+    BE-->>UI: pending case shown in Approvals tab
+    Note over UI,BE: a human clicks Approve -- minutes or days later,<br/>even after the agent process itself restarted
+    UI->>BE: POST /api/escalations/{id}/resolve {approved: true}
+    BE->>AG: POST /resume {case_id, approved: true}
+    AG->>DB: graph.get_state(thread_id=case_id) -- loads the saved checkpoint
+    AG->>AG: Command(resume=true) delivered as interrupt()'s return value
+    AG->>AG: decide -> guard -> execute resume (now approved=true)
+    AG-->>BE: only the NEW trace entries (sliced from last-seen index)
+```
+
+### Data model (Postgres, Flyway-owned, `V1__init.sql` / `V2__batch_result.sql`)
+
+| Table | Purpose | Key columns |
+|---|---|---|
+| `recovery_case` | one row per failed payment | `id (UUID)`, `amount_paise`, `error_reason`, `diagnosis`, `status`, `attempts`, `contacts_made`, `recovered_paise`, `source (LIVE\|SYNTHETIC)`, `ground_truth (JSONB, synthetic only)` |
+| `decision_log` | append-only audit trail, one row per graph node execution | `case_id (FK)`, `node`, `inputs_seen (JSONB)`, `action_chosen`, `reasoning`, `ev_score`, `blocked`, `block_reason`, `outcome` |
+| `ev_stats` | learned Beta-Bernoulli posteriors | `cause`, `action`, `alpha`, `beta` — PK `(cause, action)` |
+| `scheduled_retry` | due-later retries, polled by a `@Scheduled` job every 60s | `case_id (FK)`, `due_at`, `executed` |
+| `batch_result` | summary metrics per benchmark run, read by the dashboard | `run_id`, `strategy (DO_NOTHING\|NAIVE\|AGENT\|ORACLE)`, `metrics (JSONB)` |
+
+`decision_log` alone *is* the audit trail the dashboard renders — nothing is reconstructed after the fact.
+
+### LangGraph state schema (`agent/graph/state.py`)
+
+One `TypedDict`, deliberately kept small (<5KB — ids, short strings, ints, no large blobs) so checkpointing it to Postgres on every node stays cheap:
+
+| Field | Role |
+|---|---|
+| `case_id`, `amount_paise`, `error_reason` | the case snapshot the agent received (input) |
+| `diagnosis` | set by `diagnose`, e.g. `HARD_DECLINE` |
+| `ranked_actions` | `[{action, p, ev}]` from `ev.rank_actions`; top-3 logged |
+| `chosen_action`, `choice_reason` | this run's pick and why |
+| `vetoed_actions` | exclude-list fed by both guard vetoes and failed executions |
+| `decide_loops`, `guard_vetoes` | the global loop cap, and the max-2 consecutive-veto cap |
+| `guard_route` / `human_route` / `outcome_route` | read by the three conditional-edge router functions in `build.py` |
+| `actions`, `trace` | `Annotated[list, operator.add]` — LangGraph *concatenates* these across loop iterations instead of overwriting them |
+
+That last row is a real LangGraph mechanic worth reciting: most fields get overwritten each time a node returns an update, but `actions`/`trace` are annotated with `operator.add`, so every pass through `decide` appends to the running trace instead of erasing the previous node's entry.
+
+### Guard verdict truth table (`agent/graph/guardrails.py`)
+
+| Trigger | Verdict | What happens next |
+|---|---|---|
+| `amount_paise` over the configured limit, not yet approved | `needs_approval` | pause: `escalate_notify → human_review`, durable interrupt |
+| customer `opted_out` | `hard_stop` | close immediately — no action is safe to try |
+| global `decide_loops` exceeds `max_decide_loops` | `hard_stop` | close immediately — runaway protection |
+| retry-type action, `attempts ≥ max_payment_attempts` | veto | exclude this action, re-decide (max 2 re-decides) |
+| contact-type action, `contacts_made ≥ max_customer_contacts` | veto | exclude this action, re-decide |
+| contact-type action during configured quiet hours | veto | exclude this action, re-decide |
+| none of the above | `allowed` | proceed to `execute` |
+
+### The six tools the agent is allowed to call (`/internal/tools/**`, header `X-Agent-Secret`)
+
+| Endpoint | Backing class | What it does |
+|---|---|---|
+| `POST /retry-payment` | `RetryPaymentTool` | creates a new Razorpay order for a fresh retry |
+| `POST /schedule-retry` | `ScheduleRetryTool` | writes a row to `scheduled_retry`, picked up later by `RetryScheduler` |
+| `POST /create-payment-link` | `PaymentLinkTool` | calls Razorpay's Payment Links API, returns a real `rzp.io` URL |
+| `POST /send-reminder` | `ReminderTool` | sends a reminder, with or without a link |
+| `POST /escalate` | `EscalateTool` | marks the case `WAITING_APPROVAL` |
+| `POST /close-case` | `CloseCaseTool` | terminal close, with a logged reason |
+
+This is the agent's entire attack surface on the real world — six narrow, authenticated, single-purpose endpoints. It cannot run arbitrary SQL, cannot call Razorpay directly, and cannot do anything not represented by one of these six calls.
 
 ## Key engineering decisions
 
