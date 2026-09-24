@@ -54,57 +54,77 @@ The architecture is deliberately split into three layers: **The thing that reaso
 4. **Execution (Internal Tools):** If approved, the agent tells the Java backend which tool to run. The Java backend safely calls Razorpay to generate a fresh Payment Link or Retry Order. The React frontend renders this entire timeline instantly.
 
 ```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#ffffff', 'primaryBorderColor': '#333333', 'lineColor': '#888888', 'fontFamily': 'arial'}}}%%
 flowchart LR
-    subgraph FE["Frontend · React + Vite"]
-        UI["Dashboard · Cases · Approvals<br/>renders the audit trail live"]
+    classDef frontend fill:#e0f7fa,stroke:#00acc1,stroke-width:2px,color:#00838f
+    classDef backend fill:#f1f8e9,stroke:#689f38,stroke-width:2px,color:#33691e
+    classDef agent fill:#f3e5f5,stroke:#8e24aa,stroke-width:2px,color:#4a148c
+    classDef external fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#e65100,stroke-dasharray: 5 5
+    classDef db fill:#e8eaf6,stroke:#3f51b5,stroke-width:2px,color:#1a237e
+
+    subgraph FE["🎨 Frontend (React + Vite)"]
+        UI["📊 Live Dashboard<br/>(Cases & Audits)"]:::frontend
     end
 
-    subgraph BE["Backend · Spring Boot / Java 17"]
-        API["REST API /api/**"]
-        TOOLS["6 tool endpoints<br/>/internal/tools (X-Agent-Secret)"]
-        WH["Webhook receiver<br/>HMAC over raw bytes"]
-        GW["Gateway: Simulated or LiveRazorpay"]
-        LOG["DecisionLogger → decision_log"]
+    subgraph BE["⚙️ Backend (Spring Boot 3)"]
+        API["🌐 REST API<br/>(/api/**)"]:::backend
+        WH["🔗 Webhook Receiver<br/>(HMAC Verified)"]:::backend
+        TOOLS["🛠️ 6 Secure Tools<br/>(X-Agent-Secret)"]:::backend
+        GW["🏦 Razorpay Gateway"]:::backend
+        LOG["📝 DecisionLogger"]:::backend
     end
 
-    subgraph AG["Agent · Python FastAPI + LangGraph"]
-        GRAPH["Decision graph<br/>diagnose → decide → guard → execute"]
-        LEARN["Beta-Bernoulli learning"]
+    subgraph AG["🧠 AI Agent (Python + FastAPI)"]
+        GRAPH["🤖 LangGraph Engine<br/>Diagnose ➔ Decide ➔ Guard ➔ Execute"]:::agent
+        LEARN["📈 Beta-Bernoulli<br/>Probability Learning"]:::agent
     end
 
-    DB[("PostgreSQL<br/>cases · decision_log · ev_stats<br/>LangGraph checkpoints")]
-    RZP["Razorpay Test API"]
+    RZP{"💳 Razorpay<br/>Test API"}:::external
+    DB[("🗄️ PostgreSQL<br/>(Cases, Audits, Checkpoints)")]:::db
 
-    UI -->|/api| API
-    API --> DB
-    WH -->|payment.failed| API
-    API -->|POST /decide| GRAPH
-    GRAPH -->|6 HTTP tools| TOOLS
+    UI <==>|Poll / Sync| API
+    RZP == "payment.failed" ==> WH
+    WH --> API
+    API == "POST /decide" ==> GRAPH
+    GRAPH == "HTTP Tools" ==> TOOLS
     TOOLS --> GW
     GW --> RZP
-    RZP -->|order.paid / link.paid| WH
+    RZP -. "order.paid" .-> WH
     TOOLS --> LOG
     LOG --> DB
-    GRAPH -.checkpoints.-> DB
-    LEARN -.posteriors.-> DB
+    API --> DB
+    GRAPH -. "Durable Checkpoints" .-> DB
+    LEARN -. "Posteriors" .-> DB
 ```
 
 ### The AI Decision Graph (LLD)
 
 ```mermaid
+%%{init: {'theme': 'base'}}%%
 flowchart TD
-    A[diagnose] --> B[decide]
-    B --> C{guard}
-    C -->|ok| D[execute]
-    C -->|veto, max 2| B
-    C -->|hard stop / EV too low| F[close]
-    C -->|over ₹25,000| E[human_review ⏸]
-    E -->|approved| B
-    E -->|rejected| F
-    D --> G{check_outcome}
-    G -->|recovered / pending| F
-    G -->|failed| B
-    F --> Z([END])
+    classDef node fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1
+    classDef LLM fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20
+    classDef guard fill:#fff3e0,stroke:#ef6c00,stroke-width:2px,color:#e65100
+    classDef terminal fill:#ffebee,stroke:#c62828,stroke-width:2px,color:#b71c1c
+    classDef human fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#4a148c
+
+    A[🔍 1. Diagnose<br/><small>Deterministic cause mapping</small>]:::node --> B
+    B[🧠 2. Decide<br/><small>LLM + Expected Value Ranking</small>]:::LLM --> C
+    C{🛡️ 3. Guard<br/><small>Policy-as-Code Engine</small>}:::guard
+    
+    C -- "✅ Allowed" --> D[⚡ 4. Execute<br/><small>Call Backend Tool</small>]:::node
+    C -- "❌ Veto (Max 2)" --> B
+    C -- "⛔ Hard Stop / Low EV" --> F[🚫 Close Case]:::terminal
+    C -- "⚠️ Over ₹25,000" --> E[👤 Human Review ⏸️<br/><small>Postgres Checkpoint</small>]:::human
+    
+    E -- "✔️ Approved" --> B
+    E -- "✖️ Rejected" --> F
+    
+    D --> G{Check Outcome}
+    G -- "Success / Pending" --> F
+    G -- "Tool Failed" --> B
+    
+    F --> Z([🏁 END]):::terminal
 ```
 
 **How to explain the 4 LangGraph Nodes:**
