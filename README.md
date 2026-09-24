@@ -54,7 +54,6 @@ The architecture is deliberately split into three layers: **The thing that reaso
 4. **Execution (Internal Tools):** If approved, the agent tells the Java backend which tool to run. The Java backend safely calls Razorpay to generate a fresh Payment Link or Retry Order. The React frontend renders this entire timeline instantly.
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#ffffff', 'primaryBorderColor': '#333333', 'lineColor': '#888888', 'fontFamily': 'arial'}}}%%
 flowchart LR
     classDef frontend fill:#e0f7fa,stroke:#00acc1,stroke-width:2px,color:#00838f
     classDef backend fill:#f1f8e9,stroke:#689f38,stroke-width:2px,color:#33691e
@@ -100,7 +99,6 @@ flowchart LR
 ### The AI Decision Graph (LLD)
 
 ```mermaid
-%%{init: {'theme': 'base'}}%%
 flowchart TD
     classDef node fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1
     classDef LLM fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20
