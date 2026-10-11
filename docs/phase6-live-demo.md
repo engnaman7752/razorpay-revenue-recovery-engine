@@ -1,5 +1,8 @@
 # Phase 6 — live Razorpay test-mode demo (run on your machine)
 
+> Step-by-step version with the manual/by-hand options (curl, test UPI IDs,
+> dashboard webhook tester): **`docs/razorpay-manual.md`**.
+
 ## One-time setup
 
 1. Razorpay Dashboard (test mode) → Settings → API Keys → generate. Put into `.env`:
@@ -10,7 +13,7 @@
    ```
 2. Expose the backend to the internet for webhooks (any tunnel works):
    ```
-   ngrok http 8080
+   ngrok http 8081   # = SERVER_PORT in .env
    ```
 3. Dashboard → Settings → Webhooks → Add:
    - URL: `https://<your-tunnel>/webhook/razorpay`

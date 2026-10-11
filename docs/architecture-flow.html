@@ -1,0 +1,191 @@
+<title>Recovery Engine — Flow</title>
+<style>
+  :root{
+    --bg:#f7f8fa; --card:#ffffff; --ink:#111827; --mut:#6b7280;
+    --line:#cbd5e1; --edge:#94a3b8;
+    --razor:#2563eb; --razor-bg:#eff6ff;
+    --back:#0f766e; --back-bg:#f0fdfa;
+    --agent:#7c3aed; --agent-bg:#f5f3ff;
+    --guard:#b45309; --guard-bg:#fffbeb;
+    --human:#be123c; --human-bg:#fff1f2;
+    --win:#15803d; --win-bg:#f0fdf4;
+    --db:#374151; --db-bg:#f3f4f6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    padding:32px 24px 56px}
+  .wrap{max-width:1120px;margin:0 auto}
+  h1{font-size:26px;margin:0 0 4px;letter-spacing:-.02em}
+  .sub{color:var(--mut);margin:0 0 28px;font-size:15px}
+  .lane{display:flex;align-items:stretch;gap:0;margin:0 0 8px}
+  .num{flex:0 0 44px;display:flex;align-items:center;justify-content:center}
+  .num span{width:30px;height:30px;border-radius:50%;background:var(--ink);
+    color:#fff;font-weight:700;font-size:15px;display:flex;align-items:center;
+    justify-content:center}
+  .body{flex:1;min-width:0}
+  .step{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:14px 16px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .step h3{margin:0 0 3px;font-size:16px;display:flex;align-items:center;gap:9px;
+    flex-wrap:wrap}
+  .step p{margin:5px 0 0;color:var(--mut);font-size:13.5px}
+  .file{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:12px;
+    background:var(--db-bg);border:1px solid var(--line);border-radius:5px;
+    padding:1px 7px;color:var(--db);white-space:nowrap}
+  .tag{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
+    padding:2px 9px;border-radius:20px}
+  .t-razor{color:var(--razor);background:var(--razor-bg)}
+  .t-back{color:var(--back);background:var(--back-bg)}
+  .t-agent{color:var(--agent);background:var(--agent-bg)}
+  .t-guard{color:var(--guard);background:var(--guard-bg)}
+  .t-human{color:var(--human);background:var(--human-bg)}
+  .t-win{color:var(--win);background:var(--win-bg)}
+  .l-razor{border-left:4px solid var(--razor)}
+  .l-back{border-left:4px solid var(--back)}
+  .l-agent{border-left:4px solid var(--agent)}
+  .l-guard{border-left:4px solid var(--guard)}
+  .l-human{border-left:4px solid var(--human)}
+  .l-win{border-left:4px solid var(--win)}
+  .arrow{flex:0 0 44px}
+  .arrow svg{display:block;margin:0 auto}
+  .arrowlbl{text-align:center;color:var(--mut);font-size:11.5px;margin:-2px 0 2px}
+  .loop{background:var(--agent-bg);border:1px dashed var(--agent);border-radius:10px;
+    padding:12px 16px;margin:10px 0 10px 44px;font-size:13.5px;color:var(--agent)}
+  .loop b{color:var(--ink)}
+  .brainhands{display:flex;gap:12px;margin:2px 0 12px 44px;flex-wrap:wrap}
+  .bh{flex:1;min-width:220px;border-radius:10px;padding:11px 14px;font-size:13px}
+  .bh.brain{background:var(--agent-bg);border:1px solid var(--agent);color:var(--agent)}
+  .bh.hands{background:var(--back-bg);border:1px solid var(--back);color:var(--back)}
+  .bh b{display:block;color:var(--ink);font-size:13.5px;margin-bottom:2px}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin:24px 0 0 44px;
+    padding-top:16px;border-top:1px solid var(--line)}
+  .legend span{font-size:12.5px;color:var(--mut);display:flex;align-items:center;gap:6px}
+  .dot{width:11px;height:11px;border-radius:3px;display:inline-block}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#0f1115;--card:#181b20;--ink:#f3f4f6;--mut:#9ca3af;--line:#2b303a;
+      --edge:#4b5563;--razor:#60a5fa;--razor-bg:#172033;--back:#2dd4bf;
+      --back-bg:#0e201e;--agent:#a78bfa;--agent-bg:#1c1630;--guard:#fbbf24;
+      --guard-bg:#241d0a;--human:#fb7185;--human-bg:#2a1015;--win:#4ade80;
+      --win-bg:#0e2216;--db:#d1d5db;--db-bg:#20242b;}
+  }
+</style>
+<div class="wrap">
+  <h1>How one failed payment travels through the system</h1>
+  <p class="sub">Every box is a real file. Follow the arrows top to bottom — this is the order the code runs.</p>
+
+  <!-- 1 -->
+  <div class="lane">
+    <div class="num"><span>1</span></div>
+    <div class="body">
+      <div class="step l-razor">
+        <h3><span class="tag t-razor">Razorpay</span> A payment fails</h3>
+        <p>A real failed payment fires a webhook &nbsp;·&nbsp; or the benchmark replays one from <span class="file">data/cases.jsonl</span> (300 cases, fixed seed)</p>
+      </div>
+    </div>
+  </div>
+  <div class="lane"><div class="arrow"></div><div class="body"><div class="arrowlbl">POST /webhook/razorpay</div></div></div>
+
+  <!-- 2 -->
+  <div class="lane">
+    <div class="num"><span>2</span></div>
+    <div class="body">
+      <div class="step l-back">
+        <h3><span class="tag t-back">Backend</span> Verify &amp; open a case</h3>
+        <p><span class="file">SignatureVerifier.java</span> checks HMAC over the <b>raw bytes</b> → bad = 401. Good → <span class="file">RazorpayWebhookController.java</span> creates a case and calls the agent</p>
+      </div>
+    </div>
+  </div>
+  <div class="lane"><div class="arrow"></div><div class="body"><div class="arrowlbl">AgentClient.java → HTTP → agent /decide</div></div></div>
+
+  <!-- brain vs hands -->
+  <div class="brainhands">
+    <div class="bh brain"><b>🧠 Agent — decides, can't act</b>Separate Python process. No database, no gateway, no money. Only reasons and asks.</div>
+    <div class="bh hands"><b>🛠️ Backend — acts, enforces rules</b>Owns the gateway, the database, the audit log. The only thing that can touch money.</div>
+  </div>
+
+  <!-- 3 -->
+  <div class="lane">
+    <div class="num"><span>3</span></div>
+    <div class="body">
+      <div class="step l-agent">
+        <h3><span class="tag t-agent">Agent · LangGraph</span> The decision loop</h3>
+        <p>Wired in <span class="file">graph/build.py</span>, nodes in <span class="file">graph/nodes.py</span></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="loop">
+    <b>diagnose</b> &nbsp;→&nbsp; <b>decide</b> &nbsp;→&nbsp; <b>guard</b> &nbsp;→&nbsp; <b>execute</b> &nbsp;→&nbsp; <b>check_outcome</b><br>
+    <span style="display:block;margin-top:7px;line-height:1.7">
+    ↳ <b>diagnose</b> — error reason → cause &nbsp;(dictionary in <span class="file">graph/ev.py</span>, not an LLM)<br>
+    ↳ <b>decide</b> — rank by expected value: P(recovery)×amount − cost &nbsp;(<span class="file">llm.py</span> picks; falls back to pure EV if the model is down)<br>
+    ↳ <b>check_outcome</b> — failed? loop back to <b>decide</b> with that action struck off</span>
+  </div>
+
+  <!-- 4 guard -->
+  <div class="lane">
+    <div class="num"><span>4</span></div>
+    <div class="body">
+      <div class="step l-guard">
+        <h3><span class="tag t-guard">Policy gate</span> guard — nothing skips this</h3>
+        <p><span class="file">graph/guardrails.py</span> reads <span class="file">agent/policy.yaml</span>: attempt caps, contact caps, quiet hours, opt-out, the ₹25,000 approval line. Veto → back to decide. Over ₹25k → human.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5 human -->
+  <div class="lane"><div class="arrow"></div><div class="body"><div class="arrowlbl">amount &gt; ₹25,000</div></div></div>
+  <div class="lane">
+    <div class="num"><span>5</span></div>
+    <div class="body">
+      <div class="step l-human">
+        <h3><span class="tag t-human">Human-in-loop</span> Pause for approval</h3>
+        <p>Graph <b>interrupts</b>, checkpointed into Postgres — survives a restart. <span class="file">Escalations.jsx</span> is the queue; approve → the graph resumes exactly where it stopped.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6 execute/gateway -->
+  <div class="lane">
+    <div class="num"><span>6</span></div>
+    <div class="body">
+      <div class="step l-back">
+        <h3><span class="tag t-back">Gateway</span> execute — act on the winning action</h3>
+        <p><span class="file">SimulatedGateway.java</span> (benchmark, deterministic) &nbsp;·or·&nbsp; <span class="file">LiveRazorpayGateway.java</span> (real test API → a real rzp.io link, returns PENDING). Same graph — <span class="file">GATEWAY_MODE</span> picks.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7 log + learn -->
+  <div class="lane">
+    <div class="num"><span>7</span></div>
+    <div class="body">
+      <div class="step l-back">
+        <h3><span class="tag t-back">Every step logged + learns</span></h3>
+        <p><span class="file">DecisionLogger.java</span> writes every decision to <span class="file">decision_log</span> — the agent can't act without logging. Each outcome updates a Beta posterior in <span class="file">ev_stats</span>, so probabilities learn.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8 win -->
+  <div class="lane"><div class="arrow"></div><div class="body"><div class="arrowlbl">payment_link.paid webhook → case RECOVERED</div></div></div>
+  <div class="lane">
+    <div class="num"><span>8</span></div>
+    <div class="body">
+      <div class="step l-win">
+        <h3><span class="tag t-win">Dashboard</span> The whole story, visible</h3>
+        <p><span class="file">Dashboard.jsx</span> · <span class="file">CaseDetail.jsx</span> render the real <span class="file">decision_log</span> — the timeline judges see IS the audit trail. <b>3.3× naive recovery, half the attempts.</b></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><i class="dot" style="background:var(--razor)"></i>Razorpay</span>
+    <span><i class="dot" style="background:var(--back)"></i>Backend (Spring Boot)</span>
+    <span><i class="dot" style="background:var(--agent)"></i>Agent (LangGraph)</span>
+    <span><i class="dot" style="background:var(--guard)"></i>Policy</span>
+    <span><i class="dot" style="background:var(--human)"></i>Human</span>
+    <span><i class="dot" style="background:var(--win)"></i>Dashboard</span>
+  </div>
+</div>

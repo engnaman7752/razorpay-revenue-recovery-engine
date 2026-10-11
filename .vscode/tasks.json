@@ -1,0 +1,219 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "1 · Backend  (port from .env)",
+      "type": "shell",
+      "command": "java -jar target/recovery-backend-0.1.0.jar --server.port=8081",
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
+      },
+      "isBackground": true,
+      "presentation": {
+        "group": "services",
+        "panel": "dedicated",
+        "reveal": "always"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "2 · Agent  (port 8000)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe -m uvicorn main:app --port 8000",
+      "options": {
+        "cwd": "${workspaceFolder}/agent"
+      },
+      "isBackground": true,
+      "presentation": {
+        "group": "services",
+        "panel": "dedicated",
+        "reveal": "always"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "3 · Dashboard  (port 5173)",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "isBackground": true,
+      "presentation": {
+        "group": "services",
+        "panel": "dedicated",
+        "reveal": "always"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "▶  START EVERYTHING",
+      "dependsOn": [
+        "1 · Backend  (port 8080)",
+        "2 · Agent  (port 8000)",
+        "3 · Dashboard  (port 5173)"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    },
+    {
+      "label": "✔  DRY RUN — check everything, get demo assets",
+      "detail": "Run after START EVERYTHING. Verifies every service and stages both demo cases.",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/dryrun.py",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Demo · stage an approval",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/setup_demo.py",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Demo · prove ONE case",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe ../scripts/prove.py case",
+      "options": {
+        "cwd": "${workspaceFolder}/agent"
+      },
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Demo · prove ALL 300 live",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe ../scripts/prove.py batch",
+      "options": {
+        "cwd": "${workspaceFolder}/agent"
+      },
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Demo · check Razorpay keys",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/razorpay_smoke.py",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run the 300-case batch  (needs 1 and 2 running)",
+      "type": "shell",
+      "command": "java -jar target/recovery-backend-0.1.0.jar --recovery.batch.enabled=true --recovery.batch.include-agent=true --server.port=9090",
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
+      },
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Tests · agent (45)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe -m pytest tests/ -v",
+      "options": {
+        "cwd": "${workspaceFolder}/agent"
+      },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Setup · create venv + install deps",
+      "type": "shell",
+      "command": "python -m venv .venv; ./.venv/Scripts/python.exe -m pip install --upgrade pip; ./.venv/Scripts/python.exe -m pip install -r agent/requirements.txt",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Webhook · 1 start ngrok tunnel",
+      "detail": "Leave this running. Its URL changes every restart.",
+      "type": "shell",
+      "command": "ngrok http 8081",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always"
+      },
+      "problemMatcher": [],
+      "isBackground": true
+    },
+    {
+      "label": "Webhook · 2 show what to paste into Razorpay",
+      "detail": "Reads the live ngrok URL and prints the exact webhook URL + secret.",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/webhook_setup.py url",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Webhook · 3 self-test the whole loop",
+      "detail": "Signs a payment.failed itself and sends it to your backend. No ngrok, no real payment.",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/webhook_setup.py selftest",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Webhook · check config",
+      "detail": "Keys, GATEWAY_MODE, backend, agent, tunnel — all in one screen.",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/webhook_setup.py check",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

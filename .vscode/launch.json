@@ -1,0 +1,24 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug the agent",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["main:app", "--port", "8000"],
+      "cwd": "${workspaceFolder}/agent",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "justMyCode": false,
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Debug the backend",
+      "type": "java",
+      "request": "launch",
+      "mainClass": "com.recovery.RecoveryApplication",
+      "projectName": "recovery-backend",
+      "cwd": "${workspaceFolder}/backend"
+    }
+  ]
+}

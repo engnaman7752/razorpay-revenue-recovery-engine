@@ -17,12 +17,6 @@ import yaml
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from graph.build import build_graph
-from graph.llm import DecideLLM
-
-POLICY_PATH = Path(__file__).parent / "policy.yaml"
-
-
 def _load_dotenv() -> None:
     """Read the repo-root .env into the environment.
 
@@ -43,8 +37,12 @@ def _load_dotenv() -> None:
             os.environ.setdefault(key.strip(), value.strip())
         return
 
-
 _load_dotenv()
+
+from graph.build import build_graph
+from graph.llm import DecideLLM
+
+POLICY_PATH = Path(__file__).parent / "policy.yaml"
 
 
 def _resolve_database_url() -> str:

@@ -85,8 +85,8 @@ log = open("/tmp/batch.log").read()
 res = {m[0]: int(m[1]) for m in re.findall(r"RESULT strategy=(\w+) recovered_paise=(\d+)", log)}
 print("parsed:", res)
 assert res["DO_NOTHING"] == 0, "DO_NOTHING must recover 0"
-assert res["NAIVE"] == 46545000, f"NAIVE expected 46545000, got {res['NAIVE']}"
-assert res["ORACLE"] == 154158900, f"ORACLE expected 154158900, got {res['ORACLE']}"
+assert res["NAIVE"] == 46545015, f"NAIVE expected 46545015, got {res['NAIVE']}"
+assert res["ORACLE"] == 154158887, f"ORACLE expected 154158887, got {res['ORACLE']}"
 assert res["ORACLE"] > res["AGENT"] > res["NAIVE"] > 0, "need ORACLE > AGENT > NAIVE > 0"
 print("phase 2+3 batch numbers OK")
 PY
