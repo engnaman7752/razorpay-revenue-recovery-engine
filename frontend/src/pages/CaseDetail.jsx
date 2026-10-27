@@ -174,22 +174,37 @@ export default function CaseDetail({ id }) {
       alert("Razorpay checkout script not loaded yet");
       return;
     }
+
+    // Pick latest retry order created by the agent if present in timeline
+    let targetOrderId = data.razorpay_order_id;
+    if (data.timeline) {
+      for (const entry of data.timeline) {
+        if (entry.reasoning && entry.reasoning.includes("retry order created:")) {
+          const match = entry.reasoning.match(/retry order created:\s*(order_[A-Za-z0-9]+)/);
+          if (match) targetOrderId = match[1];
+        }
+      }
+    }
+
     const options = {
       key: "rzp_test_Tn6atO2fKmCFu0",
       amount: data.amount_paise,
       currency: data.currency || "INR",
       name: "Razorpay Revenue Recovery",
-      description: `Paying Order ${data.razorpay_order_id}`,
-      order_id: data.razorpay_order_id,
+      description: `Paying Recovery Order ${targetOrderId}`,
+      order_id: targetOrderId,
       prefill: {
         name: "Demo Customer",
         email: data.customer_id?.includes("@") ? data.customer_id : "customer@example.com",
         contact: "+919876543210",
       },
       theme: { color: "#0C2340" },
-      handler: function (response) {
-        setActionMsg(`🎉 Payment succeeded on Razorpay! ID: ${response.razorpay_payment_id}. Webhook is syncing...`);
-        setTimeout(load, 1500);
+      handler: async function (response) {
+        setActionMsg(`🎉 Payment succeeded on Razorpay! Payment ID: ${response.razorpay_payment_id}. Marking as RECOVERED...`);
+        try {
+          await api.simulatePayment({ case_id: id });
+        } catch (e) {}
+        load();
       },
       modal: {
         ondismiss: function () {

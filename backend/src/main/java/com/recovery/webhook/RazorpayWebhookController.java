@@ -73,6 +73,7 @@ public class RazorpayWebhookController {
             case "payment.failed" -> paymentFailed(payload);
             case "payment_link.paid" -> linkPaid(entity(payload, "payment_link"));
             case "order.paid" -> orderPaid(entity(payload, "order"));
+            case "payment.captured", "payment.authorized" -> paymentCaptured(entity(payload, "payment"));
             default -> ResponseEntity.ok(Map.of("ignored", eventType == null ? "?" : eventType));
         };
     }
@@ -276,6 +277,55 @@ public class RazorpayWebhookController {
             }
         }
         return recover(receipt, "retry order " + order.get("id") + " paid");
+    }
+
+    private ResponseEntity<Map<String, Object>> paymentCaptured(Map<String, Object> payment) {
+        String paymentId = (String) payment.get("id");
+        String orderId = (String) payment.get("order_id");
+        long amountPaise = ((Number) payment.getOrDefault("amount", 0)).longValue();
+        String customerId = (String) payment.get("email");
+        if (customerId == null || customerId.isBlank()) {
+            customerId = (String) payment.get("contact");
+        }
+
+        // 1. Check notes on payment
+        if (payment.get("notes") instanceof Map<?, ?> notesMap) {
+            String caseIdStr = (String) notesMap.get("recovery_case");
+            UUID cid = parseCaseId(caseIdStr);
+            if (cid != null) {
+                return recover(cid.toString(), "payment " + paymentId + " captured (via notes)");
+            }
+        }
+
+        // 2. Check if orderId matches any case
+        if (orderId != null && !orderId.isBlank()) {
+            List<RecoveryCase> matches = caseRepository.findAllByRazorpayOrderId(orderId);
+            if (!matches.isEmpty()) {
+                RecoveryCase target = matches.stream()
+                        .filter(ec -> ec.getStatus() != CaseStatus.RECOVERED && ec.getStatus() != CaseStatus.CLOSED)
+                        .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
+                        .findFirst()
+                        .orElse(matches.get(0));
+                return recover(target.getId().toString(), "payment " + paymentId + " captured for order " + orderId);
+            }
+        }
+
+        // 3. Fallback match by active case for same customer and amount
+        if (customerId != null && !customerId.isBlank() && amountPaise > 0) {
+            final String finalCust = customerId.trim();
+            var activeMatches = caseRepository.findAll().stream()
+                    .filter(ec -> "LIVE".equals(ec.getSource()))
+                    .filter(ec -> ec.getCustomerId() != null && finalCust.equalsIgnoreCase(ec.getCustomerId().trim()))
+                    .filter(ec -> ec.getAmountPaise() == amountPaise)
+                    .filter(ec -> ec.getStatus() != CaseStatus.RECOVERED && ec.getStatus() != CaseStatus.CLOSED)
+                    .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
+                    .toList();
+            if (!activeMatches.isEmpty()) {
+                return recover(activeMatches.get(0).getId().toString(), "payment " + paymentId + " captured for " + customerId);
+            }
+        }
+
+        return ResponseEntity.ok(Map.of("ignored", "unmatched payment " + paymentId));
     }
 
     /** Recover the case UUID from a payment-link reference_id. Supports the
