@@ -14,6 +14,10 @@ An autonomous agent that, for every failed payment, answers one question — *gi
 <img alt="Tests" src="https://img.shields.io/badge/tests-46%20passing-success">
 </p>
 
+> 🌐 **Live Production App:** [https://razorpay-revenue-recovery-engine-3c.vercel.app](https://razorpay-revenue-recovery-engine-3c.vercel.app)  
+> 📡 **Live Backend API (Render):** [https://recovery-backend-kt89.onrender.com](https://recovery-backend-kt89.onrender.com)  
+> 🧠 **Live AI Agent (Render):** [https://recovery-agent-y3le.onrender.com](https://recovery-agent-y3le.onrender.com)  
+
 ---
 
 ## TL;DR — the result
@@ -276,7 +280,7 @@ Kept in the README on purpose — knowing what your numbers *don't* prove is the
 - **The simulator is deterministic and single-shot.** One action recovers each case; real outcomes are stochastic and time-dependent. That's why recovery reaches 99.7% of oracle — it's near-exhaustible. **The truer differentiator is efficiency:** the agent spends ~5× the oracle's contacts, and that gap — not the recovery headline — is what the learning system narrows.
 - **Priors are hand-set near the generator's truth**, so learning shows up mostly as pruning genuinely-useless actions. With mis-specified priors it would matter more.
 - **The LLM adds judgment, not magic.** With clean EV rankings the deterministic fallback picks the same action most of the time; the LLM earns its place on tie-breaks and customer context — and the batch runs identically without an API key, by design.
-- **Live mode is demonstrated, not hardened:** no retry/backoff on Razorpay calls, single-instance scheduler, no idempotency keys on order creation, webhook replay handled only by payment-id dedupe.
+- **Live mode features:** includes optimistic locking (`@Version`), idempotency keys (`X-Idempotency-Key`), SSE real-time streaming, and 5-tier webhook correlation across orders and payment links.
 - **One merchant, one currency, no dashboard auth** — explicitly out of scope for the hackathon.
 
 ---
