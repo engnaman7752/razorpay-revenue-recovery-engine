@@ -1,14 +1,17 @@
 package com.recovery.api;
 
 import com.recovery.agent.AgentClient;
+import com.recovery.domain.CaseStatus;
 import com.recovery.domain.DecisionLog;
 import com.recovery.domain.DecisionLogRepository;
+import com.recovery.domain.DecisionLogger;
 import com.recovery.domain.RecoveryCase;
 import com.recovery.domain.RecoveryCaseRepository;
 import org.springframework.data.domain.Sort;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -29,13 +32,16 @@ public class CaseController {
     private final RecoveryCaseRepository caseRepository;
     private final DecisionLogRepository decisionLogRepository;
     private final AgentClient agentClient;
+    private final DecisionLogger decisionLogger;
 
     public CaseController(RecoveryCaseRepository caseRepository,
             DecisionLogRepository decisionLogRepository,
-            AgentClient agentClient) {
+            AgentClient agentClient,
+            DecisionLogger decisionLogger) {
         this.caseRepository = caseRepository;
         this.decisionLogRepository = decisionLogRepository;
         this.agentClient = agentClient;
+        this.decisionLogger = decisionLogger;
     }
 
     @GetMapping("/api/cases")
@@ -60,6 +66,86 @@ public class CaseController {
     public Map<String, Object> process(@PathVariable String id) {
         RecoveryCase c = find(id);
         return agentClient.decide(c, false, "");
+    }
+
+    /** Simulate a live payment failure from Razorpay (for live presentation demo). */
+    @PostMapping("/api/demo/simulate-failure")
+    public Map<String, Object> simulateFailure(@RequestBody(required = false) Map<String, Object> req) {
+        long amountPaise = 249900L;
+        String errorReason = "insufficient_fund";
+        String customerId = "judge@razorpay.com";
+        String errorSource = "customer";
+
+        if (req != null) {
+            if (req.get("amount_paise") != null) {
+                amountPaise = ((Number) req.get("amount_paise")).longValue();
+            }
+            if (req.get("error_reason") != null) {
+                errorReason = (String) req.get("error_reason");
+            }
+            if (req.get("customer_id") != null) {
+                customerId = (String) req.get("customer_id");
+            }
+            if (req.get("error_source") != null) {
+                errorSource = (String) req.get("error_source");
+            }
+        }
+
+        String paymentId = "pay_demo_" + System.currentTimeMillis();
+        String orderId = "order_demo_" + System.currentTimeMillis();
+
+        RecoveryCase c = new RecoveryCase();
+        c.setId(UUID.randomUUID());
+        c.setRazorpayPaymentId(paymentId);
+        c.setRazorpayOrderId(orderId);
+        c.setAmountPaise(amountPaise);
+        c.setCurrency("INR");
+        c.setErrorReason(errorReason);
+        c.setErrorSource(errorSource);
+        c.setCustomerId(customerId);
+        c.setSource("LIVE");
+        c.setStatus(CaseStatus.DETECTED);
+        c = caseRepository.save(c);
+
+        decisionLogger.log(c.getId(), "diagnose",
+                Map.of("error_reason", errorReason,
+                       "error_source", errorSource,
+                       "amount_paise", amountPaise),
+                null,
+                "demo: live case opened for simulated payment failure " + paymentId,
+                null, false, null, "OPENED", 0);
+
+        Map<String, Object> decision = null;
+        try {
+            decision = agentClient.decide(c, false, "");
+            c = caseRepository.findById(c.getId()).orElse(c);
+        } catch (Exception e) {
+            decision = Map.of("error", e.getMessage() == null ? "agent error" : e.getMessage());
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>(caseSummary(c));
+        result.put("payment_id", paymentId);
+        result.put("order_id", orderId);
+        result.put("decision", decision);
+        return result;
+    }
+
+    /** Simulate customer paying a recovery payment link or retry order. */
+    @PostMapping("/api/demo/simulate-payment")
+    public Map<String, Object> simulatePayment(@RequestBody Map<String, Object> req) {
+        String id = (String) req.get("case_id");
+        RecoveryCase c = find(id);
+        c.setStatus(CaseStatus.RECOVERED);
+        c.setRecoveredPaise(c.getAmountPaise());
+        caseRepository.save(c);
+
+        decisionLogger.log(c.getId(), "close",
+                Map.of("recovered_paise", c.getRecoveredPaise()),
+                null, "demo: customer completed payment via Razorpay recovery link", null, false, null, "RECOVERED", c.getAttempts());
+
+        Map<String, Object> result = new LinkedHashMap<>(caseSummary(c));
+        result.put("status", "RECOVERED");
+        return result;
     }
 
     private RecoveryCase find(String id) {

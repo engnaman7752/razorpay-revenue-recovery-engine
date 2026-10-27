@@ -5,8 +5,9 @@ import Dashboard from "./pages/Dashboard.jsx";
 import CaseList from "./pages/CaseList.jsx";
 import CaseDetail from "./pages/CaseDetail.jsx";
 import Escalations from "./pages/Escalations.jsx";
+import RazorpayDemo from "./pages/RazorpayDemo.jsx";
 
-// Tiny hash router: #/ , #/cases , #/cases/<id> , #/escalations
+// Tiny hash router: #/ , #/cases , #/cases/<id> , #/escalations , #/demo
 function useHashRoute() {
   const [hash, setHash] = useState(window.location.hash || "#/");
   useEffect(() => {
@@ -21,6 +22,7 @@ const NAV = [
   ["#/", "Dashboard"],
   ["#/cases", "Cases"],
   ["#/escalations", "Approvals"],
+  ["#/demo", "⚡ Live Demo"],
 ];
 
 function SunIcon() {
@@ -59,6 +61,7 @@ export default function App() {
   if (caseMatch) page = <CaseDetail id={caseMatch[1]} />;
   else if (route === "/cases") page = <CaseList />;
   else if (route === "/escalations") page = <Escalations onCountChange={setPendingCount} />;
+  else if (route === "/demo") page = <RazorpayDemo />;
   else page = <Dashboard />;
 
   const active = caseMatch ? "#/cases" : "#" + route;
