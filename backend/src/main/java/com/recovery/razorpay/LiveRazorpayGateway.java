@@ -54,8 +54,10 @@ public class LiveRazorpayGateway implements RazorpayGateway {
                                     "notes", Map.of("recovery_case", c.getId().toString(),
                                                     "kind", action.wire())))
                             .retrieve().body(Map.class);
-                    log.info("retry order {} created for case {}", order.get("id"), c.getId());
-                    yield GatewayResult.pending("retry order created: " + order.get("id")
+                    String orderId = (String) order.get("id");
+                    c.setRazorpayOrderId(orderId);
+                    log.info("retry order {} created for case {}", orderId, c.getId());
+                    yield GatewayResult.pending("retry order created: " + orderId
                             + " (awaiting payment webhook)");
                 }
                 case PAYMENT_LINK, REMINDER_WITH_LINK -> {
@@ -70,8 +72,11 @@ public class LiveRazorpayGateway implements RazorpayGateway {
                                     "description", "Complete your failed payment",
                                     "notes", Map.of("recovery_case", c.getId().toString())))
                             .retrieve().body(Map.class);
+                    if (link.get("order_id") != null) {
+                        c.setRazorpayOrderId((String) link.get("order_id"));
+                    }
                     String url = (String) link.get("short_url");
-                    log.info("payment link {} created for case {}", link.get("id"), c.getId());
+                    log.info("payment link {} (order {}) created for case {}", link.get("id"), link.get("order_id"), c.getId());
                     String prefix = action == RecoveryAction.REMINDER_WITH_LINK
                             ? "reminder sent (simulated) with payment link: "
                             : "payment link created: ";

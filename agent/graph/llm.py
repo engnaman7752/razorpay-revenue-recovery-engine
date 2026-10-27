@@ -44,6 +44,7 @@ class DecideLLM:
     def __init__(self, invoke=None):
         self._invoke = invoke
         self._client = None
+        self._prompt_template = PROMPT_PATH.read_text()
         # LLM_ENABLED=false forces the deterministic top-EV chooser even when a
         # key is present. That's the ablation switch: run the same 300 cases
         # with and without the model and the difference is attributable.
@@ -57,11 +58,25 @@ class DecideLLM:
             return self._invoke(prompt)
         model = os.environ.get("GEMINI_MODEL", DEFAULT_MODEL)
         key = os.environ["GOOGLE_API_KEY"]
+        body = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0,
+                "responseMimeType": "application/json",
+                "responseSchema": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "action": {"type": "STRING"},
+                        "reason": {"type": "STRING"}
+                    },
+                    "required": ["action", "reason"]
+                }
+            },
+        }
         r = httpx.post(
             f"{API_BASE}/models/{model}:generateContent",
             headers={"x-goog-api-key": key, "Content-Type": "application/json"},
-            json={"contents": [{"parts": [{"text": prompt}]}],
-                  "generationConfig": {"temperature": 0}},
+            json=body,
             timeout=30,
         )
         if r.status_code != 200:
@@ -76,7 +91,7 @@ class DecideLLM:
         if not self.available:
             return candidates[0], "rule-based: highest EV (no GOOGLE_API_KEY)", "rule"
 
-        prompt = PROMPT_PATH.read_text().format(
+        prompt = self._prompt_template.format(
             context=json.dumps(context, indent=2),
             candidates=", ".join(candidates))
 

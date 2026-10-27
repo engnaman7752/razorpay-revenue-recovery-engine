@@ -2,6 +2,7 @@ package com.recovery.webhook;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.recovery.agent.AgentClient;
+import com.recovery.api.SseController;
 import com.recovery.domain.CaseStatus;
 import com.recovery.domain.DecisionLogger;
 import com.recovery.domain.RecoveryCase;
@@ -36,6 +37,7 @@ public class RazorpayWebhookController {
     private final RecoveryCaseRepository caseRepository;
     private final AgentClient agentClient;
     private final DecisionLogger decisionLogger;
+    private final SseController sseController;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ExecutorService agentExecutor = Executors.newSingleThreadExecutor();
 
@@ -43,10 +45,12 @@ public class RazorpayWebhookController {
     private String webhookSecret;
 
     public RazorpayWebhookController(RecoveryCaseRepository caseRepository,
-                                     AgentClient agentClient, DecisionLogger decisionLogger) {
+                                     AgentClient agentClient, DecisionLogger decisionLogger,
+                                     SseController sseController) {
         this.caseRepository = caseRepository;
         this.agentClient = agentClient;
         this.decisionLogger = decisionLogger;
+        this.sseController = sseController;
     }
 
     @SuppressWarnings("unchecked")
@@ -66,7 +70,7 @@ public class RazorpayWebhookController {
         Map<String, Object> payload = (Map<String, Object>) event.getOrDefault("payload", Map.of());
 
         return switch (eventType == null ? "" : eventType) {
-            case "payment.failed" -> paymentFailed(entity(payload, "payment"));
+            case "payment.failed" -> paymentFailed(payload);
             case "payment_link.paid" -> linkPaid(entity(payload, "payment_link"));
             case "order.paid" -> orderPaid(entity(payload, "order"));
             default -> ResponseEntity.ok(Map.of("ignored", eventType == null ? "?" : eventType));
@@ -80,31 +84,94 @@ public class RazorpayWebhookController {
     }
 
     @SuppressWarnings("unchecked")
-    private ResponseEntity<Map<String, Object>> paymentFailed(Map<String, Object> payment) {
+    private ResponseEntity<Map<String, Object>> paymentFailed(Map<String, Object> payload) {
+        Map<String, Object> payment = entity(payload, "payment");
+        Map<String, Object> paymentLink = entity(payload, "payment_link");
+        Map<String, Object> order = entity(payload, "order");
+
         String paymentId = (String) payment.get("id");
         if (paymentId != null && caseRepository.findByRazorpayPaymentId(paymentId).isPresent()) {
             return ResponseEntity.ok(Map.of("duplicate", paymentId));
         }
 
-        // --- Check if this failure belongs to an existing recovery case ---
-        // 1. Recovery order retry: the order's receipt = our case UUID
+        // --- 1. Check if payload has payment_link entity with reference_id / notes ---
+        if (paymentLink != null && !paymentLink.isEmpty()) {
+            String ref = (String) paymentLink.get("reference_id");
+            UUID caseId = parseCaseId(ref);
+            if (caseId != null) {
+                var existing = caseRepository.findById(caseId);
+                if (existing.isPresent()) {
+                    return retryFailedOnExistingCase(existing.get(), payment, "payment link reference " + ref);
+                }
+            }
+            if (paymentLink.get("notes") instanceof Map<?, ?> linkNotes) {
+                String noteCaseId = (String) linkNotes.get("recovery_case");
+                UUID cid = parseCaseId(noteCaseId);
+                if (cid != null) {
+                    var existing = caseRepository.findById(cid);
+                    if (existing.isPresent()) {
+                        return retryFailedOnExistingCase(existing.get(), payment, "payment link note");
+                    }
+                }
+            }
+        }
+
+        // --- 2. Check if payload has order entity with receipt / notes ---
+        if (order != null && !order.isEmpty()) {
+            String receipt = (String) order.get("receipt");
+            UUID caseId = parseCaseId(receipt);
+            if (caseId != null) {
+                var existing = caseRepository.findById(caseId);
+                if (existing.isPresent()) {
+                    return retryFailedOnExistingCase(existing.get(), payment, "order receipt " + receipt);
+                }
+            }
+            if (order.get("notes") instanceof Map<?, ?> orderNotes) {
+                String noteCaseId = (String) orderNotes.get("recovery_case");
+                UUID cid = parseCaseId(noteCaseId);
+                if (cid != null) {
+                    var existing = caseRepository.findById(cid);
+                    if (existing.isPresent()) {
+                        return retryFailedOnExistingCase(existing.get(), payment, "order note");
+                    }
+                }
+            }
+        }
+
+        // --- 3. Check if payment has order_id registered on an existing case ---
         String orderId = (String) payment.get("order_id");
-        if (orderId != null) {
+        if (orderId != null && !orderId.isBlank()) {
             var existing = caseRepository.findByRazorpayOrderId(orderId);
             if (existing.isPresent()) {
                 return retryFailedOnExistingCase(existing.get(), payment, "retry order " + orderId);
             }
         }
-        // 2. Payment link / notes: LiveRazorpayGateway embeds recovery_case in notes
-        Map<String, Object> notes = (Map<String, Object>) payment.get("notes");
-        if (notes != null && notes.get("recovery_case") != null) {
-            String caseIdStr = (String) notes.get("recovery_case");
+
+        // --- 4. Check if payment entity has notes.recovery_case ---
+        if (payment.get("notes") instanceof Map<?, ?> notesMap) {
+            String caseIdStr = (String) notesMap.get("recovery_case");
             UUID caseId = parseCaseId(caseIdStr);
             if (caseId != null) {
                 var existing = caseRepository.findById(caseId);
                 if (existing.isPresent()) {
-                    return retryFailedOnExistingCase(existing.get(), payment, "payment link retry");
+                    return retryFailedOnExistingCase(existing.get(), payment, "payment notes");
                 }
+            }
+        }
+
+        // --- 5. Fallback matching: Same customer + same amount with an active open case ---
+        long amountPaise = ((Number) payment.getOrDefault("amount", 0)).longValue();
+        String customerId = (String) payment.getOrDefault("email", payment.get("contact"));
+        if (customerId != null && !customerId.isBlank() && amountPaise > 0) {
+            var activeMatches = caseRepository.findAll().stream()
+                    .filter(ec -> "LIVE".equals(ec.getSource()))
+                    .filter(ec -> customerId.equalsIgnoreCase(ec.getCustomerId()))
+                    .filter(ec -> ec.getAmountPaise() == amountPaise)
+                    .filter(ec -> ec.getStatus() != CaseStatus.RECOVERED && ec.getStatus() != CaseStatus.CLOSED)
+                    .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
+                    .toList();
+            if (!activeMatches.isEmpty()) {
+                return retryFailedOnExistingCase(activeMatches.get(0), payment, "active recovery for " + customerId);
             }
         }
 
@@ -113,14 +180,16 @@ public class RazorpayWebhookController {
         c.setId(UUID.randomUUID());
         c.setRazorpayPaymentId(paymentId);
         c.setRazorpayOrderId(orderId);
-        c.setAmountPaise(((Number) payment.getOrDefault("amount", 0)).longValue());
+        c.setAmountPaise(amountPaise);
         c.setCurrency((String) payment.getOrDefault("currency", "INR"));
         c.setErrorReason((String) payment.get("error_reason"));
         c.setErrorSource((String) payment.get("error_source"));
-        c.setCustomerId((String) payment.getOrDefault("email", payment.get("contact")));
+        c.setCustomerId(customerId);
         c.setSource("LIVE");
         c.setStatus(CaseStatus.DETECTED);
         caseRepository.save(c);
+
+        sseController.broadcast("case_update", Map.of("case_id", c.getId().toString(), "status", "DETECTED", "amount_paise", c.getAmountPaise(), "error_reason", c.getErrorReason() != null ? c.getErrorReason() : "", "source", "LIVE"));
 
         decisionLogger.log(c.getId(), "detect", Map.of("event", "payment.failed"),
                 null, "webhook: payment " + paymentId + " failed (" + c.getErrorReason() + ")",
@@ -151,6 +220,8 @@ public class RazorpayWebhookController {
         c.setErrorReason(newReason != null ? newReason : c.getErrorReason());
         c.setStatus(CaseStatus.DETECTED);  // reset so agent re-evaluates
         caseRepository.save(c);
+
+        sseController.broadcast("case_update", Map.of("case_id", c.getId().toString(), "status", "RETRY_FAILED", "attempt", c.getAttempts(), "error_reason", newReason != null ? newReason : ""));
 
         decisionLogger.log(c.getId(), "check_outcome",
                 Map.of("event", "payment.failed",
@@ -225,6 +296,7 @@ public class RazorpayWebhookController {
                 c.setStatus(CaseStatus.RECOVERED);
                 c.setRecoveredPaise(c.getAmountPaise());
                 caseRepository.save(c);
+                sseController.broadcast("case_update", Map.of("case_id", c.getId().toString(), "status", "RECOVERED", "recovered_paise", c.getAmountPaise()));
                 decisionLogger.log(c.getId(), "check_outcome", null, null,
                         "webhook: " + how, null, false, null, "RECOVERED", null);
                 log.info("case {} RECOVERED via webhook ({})", id, how);

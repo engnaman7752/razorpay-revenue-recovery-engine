@@ -17,6 +17,17 @@ export default function Escalations({ onCountChange }) {
   };
   useEffect(() => { refresh(); }, []);
 
+  // SSE: real-time updates from backend
+  useEffect(() => {
+    const base = import.meta.env.VITE_API_BASE || "";
+    const es = new EventSource(base + "/api/events");
+    es.addEventListener("case_update", () => {
+      refresh();
+    });
+    es.onerror = () => { es.close(); };
+    return () => es.close();
+  }, []);
+
   const resolve = async (caseId, approved) => {
     setBusy(caseId);
     try {

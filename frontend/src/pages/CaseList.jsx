@@ -33,6 +33,17 @@ export default function CaseList() {
   };
   useEffect(load, []);
 
+  // SSE: real-time updates from backend
+  useEffect(() => {
+    const base = import.meta.env.VITE_API_BASE || "";
+    const es = new EventSource(base + "/api/events");
+    es.addEventListener("case_update", () => {
+      api.cases().then(setCases).catch(() => {});
+    });
+    es.onerror = () => { es.close(); };
+    return () => es.close();
+  }, []);
+
   const filtered = useMemo(() => {
     if (!cases) return [];
     const q = query.trim().toLowerCase();

@@ -18,6 +18,10 @@ public class CorsConfig implements WebMvcConfigurer {
         registry.addMapping("/api/**")
                 .allowedOrigins(frontendOrigin.equals("*") ? new String[]{"*"} : frontendOrigin.split(","))
                 .allowedMethods("GET", "POST", "OPTIONS");
+        registry.addMapping("/api/events")
+                .allowedOrigins(frontendOrigin.equals("*") ? new String[]{"*"} : frontendOrigin.split(","))
+                .allowedMethods("GET")
+                .allowedHeaders("*");
         registry.addMapping("/webhook/**")
                 .allowedOrigins("*")
                 .allowedMethods("POST", "OPTIONS");

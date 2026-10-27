@@ -111,6 +111,18 @@ export default function Dashboard() {
   };
   useEffect(load, []);
 
+  // SSE: real-time updates from backend
+  useEffect(() => {
+    const base = import.meta.env.VITE_API_BASE || "";
+    const es = new EventSource(base + "/api/events");
+    es.addEventListener("case_update", () => {
+      // Re-fetch metrics when any case changes
+      api.metrics().then(setMetrics).catch(() => {});
+    });
+    es.onerror = () => { es.close(); };
+    return () => es.close();
+  }, []);
+
   if (error) return <ErrorState error={error} onRetry={load} />;
   if (!metrics) return <PageSkeleton />;
 

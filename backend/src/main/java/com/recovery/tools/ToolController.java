@@ -1,11 +1,14 @@
 package com.recovery.tools;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 
 /**
  * The agent's six hands. Authenticated by ToolAuthFilter (X-Agent-Secret),
@@ -22,6 +25,8 @@ public class ToolController {
     private final EscalateTool escalateTool;
     private final CloseCaseTool closeCaseTool;
 
+    private final Map<String, Map<String, Object>> idempotencyCache = new ConcurrentHashMap<>();
+
     public ToolController(RetryPaymentTool retryPaymentTool, ScheduleRetryTool scheduleRetryTool,
                           PaymentLinkTool paymentLinkTool, ReminderTool reminderTool,
                           EscalateTool escalateTool, CloseCaseTool closeCaseTool) {
@@ -33,9 +38,21 @@ public class ToolController {
         this.closeCaseTool = closeCaseTool;
     }
 
+    private Map<String, Object> withIdempotency(HttpServletRequest request,
+                                                Supplier<Map<String, Object>> action) {
+        String key = request != null ? request.getHeader("X-Idempotency-Key") : null;
+        if (key != null) {
+            Map<String, Object> cached = idempotencyCache.get(key);
+            if (cached != null) return cached;
+        }
+        Map<String, Object> result = action.get();
+        if (key != null && result != null) idempotencyCache.put(key, result);
+        return result;
+    }
+
     @PostMapping("/retry-payment")
-    public Map<String, Object> retryPayment(@RequestBody Map<String, Object> body) {
-        return retryPaymentTool.run((String) body.get("case_id"));
+    public Map<String, Object> retryPayment(HttpServletRequest request, @RequestBody Map<String, Object> body) {
+        return withIdempotency(request, () -> retryPaymentTool.run((String) body.get("case_id")));
     }
 
     @PostMapping("/schedule-retry")
@@ -46,14 +63,14 @@ public class ToolController {
     }
 
     @PostMapping("/create-payment-link")
-    public Map<String, Object> createPaymentLink(@RequestBody Map<String, Object> body) {
-        return paymentLinkTool.run((String) body.get("case_id"));
+    public Map<String, Object> createPaymentLink(HttpServletRequest request, @RequestBody Map<String, Object> body) {
+        return withIdempotency(request, () -> paymentLinkTool.run((String) body.get("case_id")));
     }
 
     @PostMapping("/send-reminder")
-    public Map<String, Object> sendReminder(@RequestBody Map<String, Object> body) {
+    public Map<String, Object> sendReminder(HttpServletRequest request, @RequestBody Map<String, Object> body) {
         String channel = body.get("channel") == null ? "email" : (String) body.get("channel");
-        return reminderTool.run((String) body.get("case_id"), channel);
+        return withIdempotency(request, () -> reminderTool.run((String) body.get("case_id"), channel));
     }
 
     @PostMapping("/escalate")
