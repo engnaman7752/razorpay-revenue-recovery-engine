@@ -79,16 +79,40 @@ public class RazorpayWebhookController {
         return (Map<String, Object>) wrapper.getOrDefault("entity", Map.of());
     }
 
+    @SuppressWarnings("unchecked")
     private ResponseEntity<Map<String, Object>> paymentFailed(Map<String, Object> payment) {
         String paymentId = (String) payment.get("id");
         if (paymentId != null && caseRepository.findByRazorpayPaymentId(paymentId).isPresent()) {
             return ResponseEntity.ok(Map.of("duplicate", paymentId));
         }
 
+        // --- Check if this failure belongs to an existing recovery case ---
+        // 1. Recovery order retry: the order's receipt = our case UUID
+        String orderId = (String) payment.get("order_id");
+        if (orderId != null) {
+            var existing = caseRepository.findByRazorpayOrderId(orderId);
+            if (existing.isPresent()) {
+                return retryFailedOnExistingCase(existing.get(), payment, "retry order " + orderId);
+            }
+        }
+        // 2. Payment link / notes: LiveRazorpayGateway embeds recovery_case in notes
+        Map<String, Object> notes = (Map<String, Object>) payment.get("notes");
+        if (notes != null && notes.get("recovery_case") != null) {
+            String caseIdStr = (String) notes.get("recovery_case");
+            UUID caseId = parseCaseId(caseIdStr);
+            if (caseId != null) {
+                var existing = caseRepository.findById(caseId);
+                if (existing.isPresent()) {
+                    return retryFailedOnExistingCase(existing.get(), payment, "payment link retry");
+                }
+            }
+        }
+
+        // --- Genuinely new failed payment: open a fresh case ---
         RecoveryCase c = new RecoveryCase();
         c.setId(UUID.randomUUID());
         c.setRazorpayPaymentId(paymentId);
-        c.setRazorpayOrderId((String) payment.get("order_id"));
+        c.setRazorpayOrderId(orderId);
         c.setAmountPaise(((Number) payment.getOrDefault("amount", 0)).longValue());
         c.setCurrency((String) payment.getOrDefault("currency", "INR"));
         c.setErrorReason((String) payment.get("error_reason"));
@@ -112,6 +136,43 @@ public class RazorpayWebhookController {
             }
         });
         return ResponseEntity.ok(Map.of("case_id", c.getId().toString()));
+    }
+
+    /** A payment failed on a recovery link or retry order that belongs to an
+     *  existing case. Log it on the ORIGINAL case's timeline and re-run the
+     *  agent so it can decide the next action (escalate, try a different
+     *  channel, or close as unrecoverable). */
+    private ResponseEntity<Map<String, Object>> retryFailedOnExistingCase(
+            RecoveryCase c, Map<String, Object> payment, String via) {
+
+        String paymentId = (String) payment.get("id");
+        String newReason = (String) payment.get("error_reason");
+        c.setAttempts(c.getAttempts() + 1);
+        c.setErrorReason(newReason != null ? newReason : c.getErrorReason());
+        c.setStatus(CaseStatus.DETECTED);  // reset so agent re-evaluates
+        caseRepository.save(c);
+
+        decisionLogger.log(c.getId(), "check_outcome",
+                Map.of("event", "payment.failed",
+                       "payment_id", paymentId != null ? paymentId : "",
+                       "via", via,
+                       "new_error", newReason != null ? newReason : ""),
+                null,
+                "recovery attempt failed via " + via + ": " + paymentId
+                        + " (" + newReason + ") — re-evaluating",
+                null, false, null, "RETRY_FAILED", c.getAttempts());
+        log.info("case {} recovery attempt failed via {} (payment {}), re-evaluating",
+                c.getId(), via, paymentId);
+
+        agentExecutor.submit(() -> {
+            try {
+                agentClient.decide(c, false, "");
+            } catch (Exception e) {
+                log.error("agent re-evaluation failed on case {}", c.getId(), e);
+            }
+        });
+        return ResponseEntity.ok(Map.of("case_id", c.getId().toString(),
+                "linked_to_existing", true, "attempt", c.getAttempts()));
     }
 
     private ResponseEntity<Map<String, Object>> linkPaid(Map<String, Object> link) {
