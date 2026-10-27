@@ -141,9 +141,15 @@ public class RazorpayWebhookController {
         // --- 3. Check if payment has order_id registered on an existing case ---
         String orderId = (String) payment.get("order_id");
         if (orderId != null && !orderId.isBlank()) {
-            var existing = caseRepository.findByRazorpayOrderId(orderId);
-            if (existing.isPresent()) {
-                return retryFailedOnExistingCase(existing.get(), payment, "retry order " + orderId);
+            List<RecoveryCase> orderMatches = caseRepository.findAllByRazorpayOrderId(orderId);
+            if (!orderMatches.isEmpty()) {
+                // Find active (non-closed, non-recovered) case first, or the newest case
+                RecoveryCase target = orderMatches.stream()
+                        .filter(ec -> ec.getStatus() != CaseStatus.RECOVERED && ec.getStatus() != CaseStatus.CLOSED)
+                        .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
+                        .findFirst()
+                        .orElse(orderMatches.get(0));
+                return retryFailedOnExistingCase(target, payment, "retry order " + orderId);
             }
         }
 
@@ -161,11 +167,15 @@ public class RazorpayWebhookController {
 
         // --- 5. Fallback matching: Same customer + same amount with an active open case ---
         long amountPaise = ((Number) payment.getOrDefault("amount", 0)).longValue();
-        String customerId = (String) payment.getOrDefault("email", payment.get("contact"));
+        String customerId = (String) payment.get("email");
+        if (customerId == null || customerId.isBlank()) {
+            customerId = (String) payment.get("contact");
+        }
         if (customerId != null && !customerId.isBlank() && amountPaise > 0) {
+            final String finalCust = customerId.trim();
             var activeMatches = caseRepository.findAll().stream()
                     .filter(ec -> "LIVE".equals(ec.getSource()))
-                    .filter(ec -> customerId.equalsIgnoreCase(ec.getCustomerId()))
+                    .filter(ec -> ec.getCustomerId() != null && finalCust.equalsIgnoreCase(ec.getCustomerId().trim()))
                     .filter(ec -> ec.getAmountPaise() == amountPaise)
                     .filter(ec -> ec.getStatus() != CaseStatus.RECOVERED && ec.getStatus() != CaseStatus.CLOSED)
                     .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
@@ -253,9 +263,19 @@ public class RazorpayWebhookController {
     }
 
     private ResponseEntity<Map<String, Object>> orderPaid(Map<String, Object> order) {
-        // LiveRazorpayGateway sets receipt = case id when creating a retry order
-        return recover((String) order.get("receipt"),
-                "retry order " + order.get("id") + " paid");
+        String receipt = (String) order.get("receipt");
+        UUID id = parseCaseId(receipt);
+        if (id != null && caseRepository.findById(id).isPresent()) {
+            return recover(receipt, "retry order " + order.get("id") + " paid");
+        }
+        String orderId = (String) order.get("id");
+        if (orderId != null && !orderId.isBlank()) {
+            List<RecoveryCase> matches = caseRepository.findAllByRazorpayOrderId(orderId);
+            if (!matches.isEmpty()) {
+                return recover(matches.get(0).getId().toString(), "order " + orderId + " paid");
+            }
+        }
+        return recover(receipt, "retry order " + order.get("id") + " paid");
     }
 
     /** Recover the case UUID from a payment-link reference_id. Supports the

@@ -8,6 +8,8 @@ import java.util.UUID;
 
 public interface RecoveryCaseRepository extends JpaRepository<RecoveryCase, UUID> {
 
+    List<RecoveryCase> findAllByRazorpayOrderId(String razorpayOrderId);
+
     Optional<RecoveryCase> findByRazorpayOrderId(String razorpayOrderId);
 
     Optional<RecoveryCase> findByRazorpayPaymentId(String razorpayPaymentId);
