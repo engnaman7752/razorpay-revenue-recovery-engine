@@ -74,12 +74,75 @@ function toCsv(timeline) {
 export default function CaseDetail({ id }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [actionLoading, setActionLoading] = useState(null);
+  const [actionMsg, setActionMsg] = useState(null);
 
   const load = () => {
     setError(null);
     api.caseDetail(id).then(setData).catch((e) => setError(e.message));
   };
   useEffect(load, [id]);
+
+  // Real-time SSE: auto-refresh when webhooks or recovery actions occur
+  useEffect(() => {
+    const base = import.meta.env.VITE_API_BASE || "";
+    const es = new EventSource(base + "/api/events");
+    es.addEventListener("case_update", (e) => {
+      try {
+        const payload = JSON.parse(e.data);
+        if (!payload.case_id || payload.case_id === id) {
+          load();
+        }
+      } catch (err) {
+        load();
+      }
+    });
+    es.onerror = () => { es.close(); };
+    return () => es.close();
+  }, [id]);
+
+  const handleSimulatePayment = async () => {
+    setActionLoading("pay");
+    setActionMsg(null);
+    try {
+      await api.simulatePayment({ case_id: id });
+      setActionMsg("✓ Payment simulated! Case status updated to RECOVERED.");
+      load();
+    } catch (e) {
+      setActionMsg("✕ Error: " + e.message);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleCloseCase = async () => {
+    if (!window.confirm("Manually close/abandon recovery for this case?")) return;
+    setActionLoading("close");
+    setActionMsg(null);
+    try {
+      await api.closeCase(id);
+      setActionMsg("✕ Case closed.");
+      load();
+    } catch (e) {
+      setActionMsg("✕ Error: " + e.message);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleProcessCase = async () => {
+    setActionLoading("process");
+    setActionMsg(null);
+    try {
+      await api.processCase(id);
+      setActionMsg("⚡ Agent re-evaluated case and executed recovery action.");
+      load();
+    } catch (e) {
+      setActionMsg("✕ Error: " + e.message);
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   if (error) return <ErrorState error={error} onRetry={load} />;
   if (!data) {
@@ -109,6 +172,7 @@ export default function CaseDetail({ id }) {
     ["Contacts", `${data.contacts_made} / 2`],
     ["Recovered", data.recovered_paise > 0
       ? <span style={{ color: "var(--status-good)" }}>{inr(data.recovered_paise)}</span> : "–"],
+    ["Razorpay Order", data.razorpay_order_id ? <span className="font-mono text-[12px]">{data.razorpay_order_id}</span> : "–"],
     ["Customer", data.customer_id || "–"],
     ["History", history.past_success != null
       ? `${history.past_success} paid / ${history.past_failures} failed${history.opted_out ? " · opted out" : ""}`
@@ -126,8 +190,46 @@ export default function CaseDetail({ id }) {
           </h1>
           <Chip tone={STATUS_TONE[data.status]}>{data.status.replace("_", " ")}</Chip>
           {data.source === "LIVE" && <Chip tone="info">LIVE webhook</Chip>}
-          <button onClick={exportCsv} className="btn-ghost ml-auto">Export CSV</button>
+          
+          <div className="ml-auto flex items-center gap-2 flex-wrap">
+            {["DETECTED", "IN_PROGRESS", "SCHEDULED"].includes(data.status) && (
+              <>
+                <button
+                  onClick={handleSimulatePayment}
+                  disabled={!!actionLoading}
+                  className="btn btn-approve text-xs !py-1 !px-3 font-medium shadow-sm"
+                  title="Simulate customer paying the link/order to mark as RECOVERED"
+                >
+                  {actionLoading === "pay" ? "Marking..." : "✓ Mark Customer Paid (Recover)"}
+                </button>
+                <button
+                  onClick={handleProcessCase}
+                  disabled={!!actionLoading}
+                  className="btn btn-primary text-xs !py-1 !px-3 font-medium shadow-sm"
+                  title="Re-run agent decision graph immediately"
+                >
+                  {actionLoading === "process" ? "Running..." : "⚡ Run Agent"}
+                </button>
+                <button
+                  onClick={handleCloseCase}
+                  disabled={!!actionLoading}
+                  className="btn btn-ghost text-xs !py-1 !px-3 font-medium text-rose-500 hover:text-rose-600"
+                  title="Abandon recovery and close case"
+                >
+                  {actionLoading === "close" ? "Closing..." : "✕ Close Case"}
+                </button>
+              </>
+            )}
+            <button onClick={exportCsv} className="btn-ghost text-xs !py-1 !px-3">Export CSV</button>
+          </div>
         </div>
+
+        {actionMsg && (
+          <div className="mt-3 text-xs text-inkmid font-medium bg-raised/70 px-3 py-1.5 rounded-lg border border-line">
+            {actionMsg}
+          </div>
+        )}
+
         <dl className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3.5 mt-5 text-sm">
           {fields.map(([k, v]) => (
             <div key={k}>

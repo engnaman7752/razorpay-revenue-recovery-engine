@@ -33,15 +33,18 @@ public class CaseController {
     private final DecisionLogRepository decisionLogRepository;
     private final AgentClient agentClient;
     private final DecisionLogger decisionLogger;
+    private final SseController sseController;
 
     public CaseController(RecoveryCaseRepository caseRepository,
             DecisionLogRepository decisionLogRepository,
             AgentClient agentClient,
-            DecisionLogger decisionLogger) {
+            DecisionLogger decisionLogger,
+            SseController sseController) {
         this.caseRepository = caseRepository;
         this.decisionLogRepository = decisionLogRepository;
         this.agentClient = agentClient;
         this.decisionLogger = decisionLogger;
+        this.sseController = sseController;
     }
 
     @GetMapping("/api/cases")
@@ -65,7 +68,32 @@ public class CaseController {
     @PostMapping("/api/cases/{id}/process")
     public Map<String, Object> process(@PathVariable String id) {
         RecoveryCase c = find(id);
-        return agentClient.decide(c, false, "");
+        Map<String, Object> decision = agentClient.decide(c, false, "");
+        c = caseRepository.findById(c.getId()).orElse(c);
+        sseController.broadcast("case_update", Map.of(
+                "case_id", c.getId().toString(),
+                "status", c.getStatus().name()
+        ));
+        return decision;
+    }
+
+    /** Manually close/abandon an in-progress or active case. */
+    @PostMapping("/api/cases/{id}/close")
+    public Map<String, Object> close(@PathVariable String id) {
+        RecoveryCase c = find(id);
+        c.setStatus(CaseStatus.CLOSED);
+        c = caseRepository.save(c);
+
+        decisionLogger.log(c.getId(), "close",
+                Map.of("status", "CLOSED", "manual", true),
+                null, "operator manually closed recovery case", null, false, null, "CLOSED", c.getAttempts());
+
+        sseController.broadcast("case_update", Map.of(
+                "case_id", c.getId().toString(),
+                "status", "CLOSED"
+        ));
+
+        return caseSummary(c);
     }
 
     /** Simulate a live payment failure from Razorpay (for live presentation demo). */
@@ -115,6 +143,14 @@ public class CaseController {
                 "demo: live case opened for simulated payment failure " + paymentId,
                 null, false, null, "OPENED", 0);
 
+        sseController.broadcast("case_update", Map.of(
+                "case_id", c.getId().toString(),
+                "status", "DETECTED",
+                "amount_paise", c.getAmountPaise(),
+                "error_reason", c.getErrorReason() != null ? c.getErrorReason() : "",
+                "source", "LIVE"
+        ));
+
         Map<String, Object> decision = null;
         try {
             decision = agentClient.decide(c, false, "");
@@ -142,6 +178,12 @@ public class CaseController {
         decisionLogger.log(c.getId(), "close",
                 Map.of("recovered_paise", c.getRecoveredPaise()),
                 null, "demo: customer completed payment via Razorpay recovery link", null, false, null, "RECOVERED", c.getAttempts());
+
+        sseController.broadcast("case_update", Map.of(
+                "case_id", c.getId().toString(),
+                "status", "RECOVERED",
+                "recovered_paise", c.getRecoveredPaise()
+        ));
 
         Map<String, Object> result = new LinkedHashMap<>(caseSummary(c));
         result.put("status", "RECOVERED");

@@ -28,4 +28,6 @@ export const api = {
     post(`/api/escalations/${id}/resolve`, { approved }),
   simulateFailure: (payload) => post("/api/demo/simulate-failure", payload),
   simulatePayment: (payload) => post("/api/demo/simulate-payment", payload),
+  closeCase: (id) => post(`/api/cases/${id}/close`),
+  processCase: (id) => post(`/api/cases/${id}/process`),
 };
