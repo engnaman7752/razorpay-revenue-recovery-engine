@@ -71,6 +71,31 @@ function toCsv(timeline) {
   return [cols.join(","), ...timeline.map((e) => cols.map((c) => esc(e[c])).join(","))].join("\n");
 }
 
+function formatReasoning(text) {
+  if (!text) return null;
+  const match = text.match(/(https?:\/\/[^\s)]+)/);
+  if (!match) return <p className="text-sm mt-1.5">{text}</p>;
+
+  const url = match[0];
+  const parts = text.split(url);
+  return (
+    <div className="mt-1.5 space-y-1.5">
+      <p className="text-sm">
+        {parts[0]}
+        <span className="text-inkmid text-xs">{parts[1] || ""}</span>
+      </p>
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg bg-blue-500/15 text-blue-500 hover:bg-blue-500/25 border border-blue-500/30 transition-all"
+      >
+        🔗 Open Payment Link: <span className="underline font-mono">{url}</span> ↗
+      </a>
+    </div>
+  );
+}
+
 export default function CaseDetail({ id }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -144,6 +169,46 @@ export default function CaseDetail({ id }) {
     }
   };
 
+  const handlePayWithRazorpay = () => {
+    if (!window.Razorpay) {
+      alert("Razorpay checkout script not loaded yet");
+      return;
+    }
+    const options = {
+      key: "rzp_test_Tn6atO2fKmCFu0",
+      amount: data.amount_paise,
+      currency: data.currency || "INR",
+      name: "Razorpay Revenue Recovery",
+      description: `Paying Order ${data.razorpay_order_id}`,
+      order_id: data.razorpay_order_id,
+      prefill: {
+        name: "Demo Customer",
+        email: data.customer_id?.includes("@") ? data.customer_id : "customer@example.com",
+        contact: "+919876543210",
+      },
+      theme: { color: "#0C2340" },
+      handler: function (response) {
+        setActionMsg(`🎉 Payment succeeded on Razorpay! ID: ${response.razorpay_payment_id}. Webhook is syncing...`);
+        setTimeout(load, 1500);
+      },
+      modal: {
+        ondismiss: function () {
+          setActionMsg("Razorpay checkout modal closed.");
+        },
+      },
+    };
+
+    try {
+      const rzp = new window.Razorpay(options);
+      rzp.on("payment.failed", function (response) {
+        setActionMsg(`Payment failed in checkout modal: ${response.error?.description || "declined"}`);
+      });
+      rzp.open();
+    } catch (err) {
+      setActionMsg("Error opening Razorpay modal: " + err.message);
+    }
+  };
+
   if (error) return <ErrorState error={error} onRetry={load} />;
   if (!data) {
     return (
@@ -194,6 +259,15 @@ export default function CaseDetail({ id }) {
           <div className="ml-auto flex items-center gap-2 flex-wrap">
             {["DETECTED", "IN_PROGRESS", "SCHEDULED"].includes(data.status) && (
               <>
+                {data.razorpay_order_id && (
+                  <button
+                    onClick={handlePayWithRazorpay}
+                    className="btn bg-[#0C2340] hover:bg-[#1a385f] text-white text-xs !py-1 !px-3 font-semibold shadow-sm"
+                    title="Pay this specific Order ID directly using Razorpay Checkout modal"
+                  >
+                    💳 Pay This Order (Razorpay Modal)
+                  </button>
+                )}
                 <button
                   onClick={handleSimulatePayment}
                   disabled={!!actionLoading}
@@ -295,7 +369,7 @@ export default function CaseDetail({ id }) {
                       Blocked by policy — {e.block_reason}
                     </div>
                   )}
-                  {e.reasoning && <p className="text-sm mt-1.5">{e.reasoning}</p>}
+                  {formatReasoning(e.reasoning)}
 
                   {chips.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mt-2">
