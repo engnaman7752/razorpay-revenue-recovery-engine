@@ -81,7 +81,7 @@ def main():
             "description": "Complete your failed payment",
             "reference_id": f"recovery-demo-{int(time.time())}",
             "customer": {"name": "Demo Customer", "email": "demo@example.com",
-                         "contact": "+919999999999"},
+                         "contact": "+919876543210"},
             "notify": {"sms": False, "email": False},   # don't spam anyone
         })
         link.raise_for_status()
